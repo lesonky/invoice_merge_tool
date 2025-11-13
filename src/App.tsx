@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { open as openDialog } from "@tauri-apps/api/dialog";
 import { open as openShell } from "@tauri-apps/api/shell";
+import { dirname } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import FileList from "@components/FileList";
 import MergeSummaryDialog from "@components/MergeSummaryDialog";
@@ -170,9 +171,24 @@ function App() {
 
   const openResultFolder = useCallback(async () => {
     if (!dialog.outputPath) return;
-    await openShell(dialog.outputPath);
-    setDialog(defaultDialog);
-  }, [dialog.outputPath]);
+    try {
+      await openShell(dialog.outputPath);
+      setDialog(defaultDialog);
+      return;
+    } catch (error) {
+      console.error("open file failed", error);
+    }
+
+    try {
+      const folder = await dirname(dialog.outputPath);
+      await openShell(folder);
+      setDialog(defaultDialog);
+      setStatusMessage("已打开输出所在文件夹。");
+    } catch (error) {
+      console.error("open folder fallback failed", error);
+      setStatusMessage("无法打开输出文件，请手动前往目标目录。");
+    }
+  }, [dialog.outputPath, setStatusMessage]);
 
   return (
     <div className="app-shell">
