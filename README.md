@@ -4,6 +4,8 @@ Invoice Merge Assistant is a lightweight cross-platform desktop tool built with 
 
 ![App snapshot](docs/snapshot.png)
 
+[简体中文 README](README_CN.md)
+
 ## Key Features
 
 - **Folder-first workflow**: Select any directory; the app auto-detects supported files, shows metadata, and keeps the original order sorted by name or modified time.
