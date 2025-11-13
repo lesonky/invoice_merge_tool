@@ -1,0 +1,39 @@
+[package]
+name = "invoice-merge-tauri"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+tauri = { version = "1.5", features = [
+    "dialog-open",
+    "dialog-save",
+    "fs-read-dir",
+    "path-all",
+    "shell-open"
+] }
+walkdir = "2.5"
+image = { version = "0.24", default-features = false, features = [
+    "jpeg",
+    "png",
+    "pnm",
+    "gif",
+    "ico",
+    "bmp",
+    "tiff",
+    "webp"
+] }
+printpdf = { version = "0.5", features = ["embedded_images"] }
+lopdf = "0.32"
+tempfile = "3.8"
+libheif-rs = "0.17"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
