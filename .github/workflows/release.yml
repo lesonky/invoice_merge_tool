@@ -45,7 +45,7 @@ jobs:
           & "$vcpkgPath\bootstrap-vcpkg.bat"
           echo "VCPKG_ROOT=$vcpkgPath" | Out-File -FilePath $env:GITHUB_ENV -Append
           & "$vcpkgPath\vcpkg.exe" integrate install
-          & "$vcpkgPath\vcpkg.exe" install libheif:x64-windows
+          & "$vcpkgPath\vcpkg.exe" install libheif:x64-windows libheif:x64-windows-static-md
 
       - name: Install dependencies
         run: npm install
