@@ -9,6 +9,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "esModuleInterop": true,
+    "noEmit": true,
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
