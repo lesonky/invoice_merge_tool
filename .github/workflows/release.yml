@@ -30,6 +30,12 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system deps (macOS)
+        if: matrix.platform == 'macOS'
+        run: |
+          brew update
+          brew install libheif pkg-config
+
       - name: Install dependencies
         run: npm install
 
