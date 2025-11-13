@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { open as openDialog } from "@tauri-apps/api/dialog";
-import { dirname } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import FileList from "@components/FileList";
 import MergeSummaryDialog from "@components/MergeSummaryDialog";
@@ -168,28 +167,7 @@ function App() {
     }
   }, [folderPath, selectedFiles, sortMode, customName]);
 
-  const openResultFolder = useCallback(async () => {
-    if (!dialog.outputPath) return;
-    const tryOpen = async (target: string) => invoke("open_path_cmd", { target });
-
-    try {
-      await tryOpen(dialog.outputPath);
-      setDialog(defaultDialog);
-      return;
-    } catch (error) {
-      console.error("open file failed", error);
-    }
-
-    try {
-      const folder = await dirname(dialog.outputPath);
-      await tryOpen(folder);
-      setDialog(defaultDialog);
-      setStatusMessage("已打开输出所在文件夹。");
-    } catch (error) {
-      console.error("open folder fallback failed", error);
-      setStatusMessage("无法打开输出文件，请手动前往目标目录。");
-    }
-  }, [dialog.outputPath, setStatusMessage]);
+  const closeDialog = useCallback(() => setDialog(defaultDialog), []);
 
   return (
     <div className="app-shell">
@@ -311,10 +289,8 @@ function App() {
             ? `${dialog.description}\n失败文件：${dialog.failed.join(", ")}`
             : dialog.description
         }
-        primaryLabel={dialog.outputPath ? "打开输出文件" : "关闭"}
-        onPrimary={dialog.outputPath ? openResultFolder : () => setDialog(defaultDialog)}
-        secondaryLabel={dialog.outputPath ? "完成" : undefined}
-        onSecondary={dialog.outputPath ? () => setDialog(defaultDialog) : undefined}
+        primaryLabel="完成"
+        onPrimary={closeDialog}
       />
     </div>
   );
