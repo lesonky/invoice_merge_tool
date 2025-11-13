@@ -10,12 +10,15 @@ use std::{
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use tauri::Window;
 use tempfile::TempPath;
 use thiserror::Error;
 
-const VALID_EXTENSIONS: &[&str] = &["pdf", "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "heic"];
+const VALID_EXTENSIONS: &[&str] = &["pdf", "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "heic", "ofd"];
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "heic"];
+const OFD_EXTENSIONS: &[&str] = &["ofd"];
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InvoiceFile {
@@ -186,6 +189,17 @@ fn merge_invoices(window: &Window, mut req: MergeRequest) -> Result<MergeResult,
                     continue;
                 }
             }
+        } else if OFD_EXTENSIONS.contains(&ext.as_str()) {
+            match convert_ofd_to_pdf(&canon) {
+                Ok((path_buf, temp_path)) => {
+                    pdf_inputs.push(path_buf);
+                    temp_paths.push(temp_path);
+                }
+                Err(_) => {
+                    failed.push(file.file_name.clone());
+                    continue;
+                }
+            }
         } else {
             failed.push(file.file_name.clone());
         }
@@ -323,6 +337,45 @@ fn convert_image_to_pdf(path: &Path) -> Result<(PathBuf, TempPath), MergeError> 
     let temp_path = temp_file.into_temp_path();
     let path_buf = temp_path.to_path_buf();
     Ok((path_buf, temp_path))
+}
+
+#[cfg(target_os = "macos")]
+fn convert_ofd_to_pdf(path: &Path) -> Result<(PathBuf, TempPath), MergeError> {
+    let temp_images = tempfile::tempdir().map_err(MergeError::Io)?;
+    let output_dir = temp_images.path();
+    let status = Command::new("qlmanage")
+        .args([
+            "-t",
+            "-s",
+            "2000",
+            "-o",
+            output_dir.to_str().ok_or_else(|| MergeError::Pdf("无法解析 OFD 输出目录".into()))?,
+            path.to_str().ok_or_else(|| MergeError::Pdf("OFD 路径包含不可识别字符".into()))?,
+        ])
+        .status()
+        .map_err(|err| MergeError::Pdf(err.to_string()))?;
+    if !status.success() {
+        return Err(MergeError::Pdf("系统无法生成 OFD 预览".into()));
+    }
+
+    let mut png_path = None;
+    for entry in fs::read_dir(output_dir)? {
+        let entry = entry?;
+        if entry.path().extension().map(|ext| ext.eq_ignore_ascii_case("png")) == Some(true) {
+            png_path = Some(entry.path());
+            break;
+        }
+    }
+
+    let png_path = png_path.ok_or_else(|| MergeError::Pdf("OFD 未生成预览图像".into()))?;
+    convert_image_to_pdf(&png_path)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn convert_ofd_to_pdf(_path: &Path) -> Result<(PathBuf, TempPath), MergeError> {
+    Err(MergeError::Pdf(
+        "当前系统暂不支持自动转换 OFD，请在 macOS 上使用".into(),
+    ))
 }
 
 fn load_dynamic_image(path: &Path) -> Result<DynamicImage, MergeError> {
