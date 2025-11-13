@@ -16,6 +16,7 @@ use thiserror::Error;
 
 const VALID_EXTENSIONS: &[&str] = &["pdf", "jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "heic"];
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "bmp", "gif", "tiff", "webp", "heic"];
+const IMAGE_RENDER_DPI: f64 = 150.0;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InvoiceFile {
@@ -283,8 +284,8 @@ fn convert_image_to_pdf(path: &Path) -> Result<(PathBuf, TempPath), MergeError> 
     let offset_x = (210.0 - display_w) / 2.0;
     let offset_y = (297.0 - display_h) / 2.0;
 
-    let base_width_pt = (img_w.max(1) as f64 / 300.0) * 72.0;
-    let base_height_pt = (img_h.max(1) as f64 / 300.0) * 72.0;
+    let base_width_pt = (img_w.max(1) as f64 / IMAGE_RENDER_DPI) * 72.0;
+    let base_height_pt = (img_h.max(1) as f64 / IMAGE_RENDER_DPI) * 72.0;
     let target_width_pt = (display_w / 25.4) * 72.0;
     let target_height_pt = (display_h / 25.4) * 72.0;
     let scale_x = if base_width_pt == 0.0 {
@@ -306,7 +307,7 @@ fn convert_image_to_pdf(path: &Path) -> Result<(PathBuf, TempPath), MergeError> 
             rotate: None,
             scale_x: Some(scale_x),
             scale_y: Some(scale_y),
-            dpi: Some(300.0),
+            dpi: Some(IMAGE_RENDER_DPI),
         },
     );
 
