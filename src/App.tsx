@@ -31,6 +31,7 @@ function App() {
   const [progress, setProgress] = useState(0);
   const [customName, setCustomName] = useState("");
   const [dialog, setDialog] = useState<DialogState>(defaultDialog);
+  const [selectedMap, setSelectedMap] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const unlistenPromise = listen<ProgressPayload>("merge-progress", (event) => {
@@ -80,8 +81,40 @@ function App() {
     return sorted;
   }, [files, sortMode]);
 
+  useEffect(() => {
+    setSelectedMap((prev) => {
+      const next: Record<string, boolean> = {};
+      files.forEach((file) => {
+        next[file.path] = prev[file.path] ?? true;
+      });
+      return next;
+    });
+  }, [files]);
+
+  const selectedFiles = useMemo(
+    () => sortedFiles.filter((file) => selectedMap[file.path] ?? true),
+    [sortedFiles, selectedMap]
+  );
+
+  const handleToggleFile = useCallback((path: string, checked: boolean) => {
+    setSelectedMap((prev) => ({ ...prev, [path]: checked }));
+  }, []);
+
+  const handleToggleAll = useCallback(
+    (checked: boolean) => {
+      setSelectedMap((prev) => {
+        const next = { ...prev };
+        files.forEach((file) => {
+          next[file.path] = checked;
+        });
+        return next;
+      });
+    },
+    [files]
+  );
+
   const handleMerge = useCallback(async () => {
-    if (!folderPath || !sortedFiles.length) {
+    if (!folderPath || !selectedFiles.length) {
       return;
     }
 
@@ -94,7 +127,7 @@ function App() {
       const result = await invoke<MergeResult>("merge_invoices_cmd", {
         req: {
           folder_path: folderPath,
-          files: sortedFiles,
+          files: selectedFiles,
           sort_mode: sortMode,
           output_file_name: customName.trim() ? customName.trim() : null
         }
@@ -133,7 +166,7 @@ function App() {
     } finally {
       setIsMerging(false);
     }
-  }, [folderPath, sortedFiles, sortMode, customName]);
+  }, [folderPath, selectedFiles, sortMode, customName]);
 
   const openResultFolder = useCallback(async () => {
     if (!dialog.outputPath) return;
@@ -226,12 +259,19 @@ function App() {
           <FileList
             files={sortedFiles}
             emptyMessage={folderPath ? "此目录下没有可合并的文件。" : "尚未选择发票文件夹。"}
+            selected={selectedMap}
+            onToggle={handleToggleFile}
+            onToggleAll={handleToggleAll}
           />
         </section>
 
+        <p className="inline-hint" style={{ marginTop: 12 }}>
+          已选择 {selectedFiles.length} / {sortedFiles.length} 个文件
+        </p>
+
         <section style={{ marginTop: 24 }}>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <button className="button primary" disabled={isMerging || !sortedFiles.length} onClick={handleMerge}>
+            <button className="button primary" disabled={isMerging || !selectedFiles.length} onClick={handleMerge}>
               {isMerging ? "合并中…" : "合并并导出 PDF"}
             </button>
             <div style={{ flex: 1 }}>

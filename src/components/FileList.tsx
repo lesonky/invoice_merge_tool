@@ -1,13 +1,28 @@
 import type { InvoiceFile } from "@shared-types/index";
 import { formatBytes, formatDate } from "@lib/format";
-import React from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 
 interface FileListProps {
   files: InvoiceFile[];
   emptyMessage: string;
+  selected: Record<string, boolean>;
+  onToggle: (path: string, checked: boolean) => void;
+  onToggleAll: (checked: boolean) => void;
 }
 
-const FileList: React.FC<FileListProps> = ({ files, emptyMessage }) => {
+const FileList: React.FC<FileListProps> = ({ files, emptyMessage, selected, onToggle, onToggleAll }) => {
+  const total = files.length;
+  const selectedCount = useMemo(
+    () => files.reduce((sum, file) => (selected[file.path] ?? true ? sum + 1 : sum), 0),
+    [files, selected]
+  );
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!headerCheckboxRef.current) return;
+    headerCheckboxRef.current.indeterminate = selectedCount > 0 && selectedCount < total;
+  }, [selectedCount, total]);
+
   if (!files.length) {
     return (
       <div style={{
@@ -27,7 +42,16 @@ const FileList: React.FC<FileListProps> = ({ files, emptyMessage }) => {
       <table className="file-table">
         <thead>
           <tr>
-            <th style={{ width: "45%" }}>文件名</th>
+            <th style={{ width: "5%" }}>
+              <input
+                ref={headerCheckboxRef}
+                type="checkbox"
+                checked={total > 0 && selectedCount === total}
+                onChange={(event) => onToggleAll(event.target.checked)}
+                aria-label="全选"
+              />
+            </th>
+            <th style={{ width: "40%" }}>文件名</th>
             <th style={{ width: "15%" }}>类型</th>
             <th style={{ width: "25%" }}>修改时间</th>
             <th style={{ width: "15%" }}>大小</th>
@@ -36,6 +60,14 @@ const FileList: React.FC<FileListProps> = ({ files, emptyMessage }) => {
         <tbody>
           {files.map((file) => (
             <tr key={file.path}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selected[file.path] ?? true}
+                  onChange={(event) => onToggle(file.path, event.target.checked)}
+                  aria-label={`选择 ${file.file_name}`}
+                />
+              </td>
               <td>{file.file_name}</td>
               <td style={{ textTransform: "uppercase" }}>{file.ext}</td>
               <td>{formatDate(file.modified_ts)}</td>
