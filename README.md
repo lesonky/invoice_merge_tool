@@ -35,3 +35,7 @@ Rust tooling (stable) and the Tauri prerequisites for your platform must be inst
 ## Contributing
 
 See `AGENTS.md` for coding style, testing, and PR expectations. Issues and PRs are welcome—especially around expanding file-format support, accessibility improvements, and additional progress telemetry.
+
+## CI / Releases
+
+A GitHub Actions workflow (`.github/workflows/release.yml`) builds signed bundles for macOS and Windows whenever a Git tag matching `v*` is pushed. The workflow installs dependencies, runs the Tauri build, and attaches the generated artifacts to the corresponding GitHub Release automatically.
