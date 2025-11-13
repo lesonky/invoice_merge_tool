@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
-use tauri::Window;
+use tauri::{api::shell, Manager, Window};
 use tempfile::TempPath;
 use thiserror::Error;
 
@@ -497,7 +497,19 @@ fn merge_pdf_files(window: &Window, files: &[PathBuf], output: &Path) -> Result<
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![scan_folder_cmd, merge_invoices_cmd])
+        .invoke_handler(tauri::generate_handler![
+            scan_folder_cmd,
+            merge_invoices_cmd,
+            open_path_cmd
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+#[tauri::command]
+fn open_path_cmd(window: Window, target: String) -> Result<(), String> {
+    let path = PathBuf::from(&target);
+    if let Err(err) = window.fs_scope().allow_file(&path) {
+        eprintln!("shell scope allow_file failed: {err}");
+    }
+    shell::open(&window.shell_scope(), target, None).map_err(|err| err.to_string())
 }

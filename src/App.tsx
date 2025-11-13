@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { open as openDialog } from "@tauri-apps/api/dialog";
-import { open as openShell } from "@tauri-apps/api/shell";
 import { dirname } from "@tauri-apps/api/path";
 import { listen } from "@tauri-apps/api/event";
 import FileList from "@components/FileList";
@@ -171,8 +170,10 @@ function App() {
 
   const openResultFolder = useCallback(async () => {
     if (!dialog.outputPath) return;
+    const tryOpen = async (target: string) => invoke("open_path_cmd", { target });
+
     try {
-      await openShell(dialog.outputPath);
+      await tryOpen(dialog.outputPath);
       setDialog(defaultDialog);
       return;
     } catch (error) {
@@ -181,7 +182,7 @@ function App() {
 
     try {
       const folder = await dirname(dialog.outputPath);
-      await openShell(folder);
+      await tryOpen(folder);
       setDialog(defaultDialog);
       setStatusMessage("已打开输出所在文件夹。");
     } catch (error) {
