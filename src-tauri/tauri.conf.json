@@ -49,8 +49,8 @@
       {
         "label": "main",
         "title": "Master Concept 发票合并助手",
-        "width": 960,
-        "height": 600,
+        "width": 1000,
+        "height": 850,
         "resizable": true
       }
     ]
