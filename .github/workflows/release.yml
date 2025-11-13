@@ -40,12 +40,12 @@ jobs:
         if: matrix.platform == 'Windows'
         shell: pwsh
         run: |
-          $vcpkgPath = \"$env:RUNNER_TEMP\\vcpkg\"
+          $vcpkgPath = Join-Path $env:RUNNER_TEMP "vcpkg"
           git clone https://github.com/microsoft/vcpkg $vcpkgPath
-          & \"$vcpkgPath\\bootstrap-vcpkg.bat\"
-          echo \"VCPKG_ROOT=$vcpkgPath\" | Out-File -FilePath $env:GITHUB_ENV -Append
-          & \"$vcpkgPath\\vcpkg.exe\" integrate install
-          & \"$vcpkgPath\\vcpkg.exe\" install libheif:x64-windows
+          & "$vcpkgPath\bootstrap-vcpkg.bat"
+          echo "VCPKG_ROOT=$vcpkgPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & "$vcpkgPath\vcpkg.exe" integrate install
+          & "$vcpkgPath\vcpkg.exe" install libheif:x64-windows
 
       - name: Install dependencies
         run: npm install
