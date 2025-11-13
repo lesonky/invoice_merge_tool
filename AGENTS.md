@@ -2,7 +2,6 @@
 
 ## Project Structure & Module Organization
 The repo tracks the cross-platform invoice merge tool. UI code lives in `src/` (React + TypeScript + Vite) with entry points such as `main.tsx`, `App.tsx`, and reusable components under `src/components/`. Native logic sits in `src-tauri/`: `src-tauri/src/main.rs` wires up commands, while helpers like `fs_scan.rs`, `merge.rs`, and `model.rs` handle file discovery, PDF/image decoding, and output writing. Packaging metadata (`tauri.conf.json`, `Cargo.toml`) also stays in `src-tauri/`. Architecture notes and UX references are stored under `docs/` for quick onboarding.
-`src-tauri/src/main.rs` now also manages macOS-only OFD conversion by shelling out to `qlmanage`, producing PNG previews that reuse the existing image→PDF pipeline; on other platforms OFD files are reported as unsupported.
 
 ## Build, Test, and Development Commands
 Use npm scripts as the main entry point:
