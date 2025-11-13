@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use chrono::{DateTime, Local};
 use image::{DynamicImage, GenericImageView, ImageBuffer, RgbImage, RgbaImage};
 use libheif_rs::{ColorSpace, HeifContext, RgbChroma};
