@@ -39,3 +39,13 @@ See `AGENTS.md` for coding style, testing, and PR expectations. Issues and PRs a
 ## CI / Releases
 
 A GitHub Actions workflow (`.github/workflows/release.yml`) builds signed bundles for macOS and Windows whenever a Git tag matching `v*` is pushed. The workflow installs dependencies, runs the Tauri build, and attaches the generated artifacts to the corresponding GitHub Release automatically.
+
+## macOS Gatekeeper Note
+
+If you download the unsigned `.dmg` or `.app` from GitHub Releases, macOS Gatekeeper may block it the first time you launch. To trust the app manually:
+
+```bash
+xattr -cr /Applications/InvoiceMergeAssistant.app
+```
+
+Then right-click the app → “Open” once. After this first approval, you can launch it normally.
