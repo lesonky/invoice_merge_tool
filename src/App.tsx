@@ -21,17 +21,13 @@ const defaultDialog: DialogState = {
   failed: []
 };
 
-type SortField = "file_name" | "ext" | "modified_ts" | "size";
-type SortDirection = "asc" | "desc";
-
 function App() {
   const [folderPath, setFolderPath] = useState<string>("");
   const [files, setFiles] = useState<InvoiceFile[]>([]);
-  const [sortConfig, setSortConfig] = useState<{ field: SortField; direction: SortDirection }>({
+  const [sortConfig, setSortConfig] = useState<SortConfig | null>({
     field: "file_name",
     direction: "asc"
   });
-  const [isCustomOrder, setIsCustomOrder] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [statusMessage, setStatusMessage] = useState("就绪。");
   const [progress, setProgress] = useState(0);
@@ -69,39 +65,15 @@ function App() {
     try {
       const result = await invoke<InvoiceFile[]>("scan_folder_cmd", { folderPath: folder });
       setFolderPath(folder);
-      setFiles(result);
-      setIsCustomOrder(false);
+      const initial = sortList(result, "file_name", "asc");
+      setFiles(initial);
+      setSortConfig({ field: "file_name", direction: "asc" });
       setStatusMessage(`已找到 ${result.length} 个可合并文件。`);
     } catch (error) {
       console.error(error);
       setStatusMessage("扫描失败，请重试。");
     }
   }, []);
-
-  const sortedFiles = useMemo(() => {
-    if (isCustomOrder) {
-      return files;
-    }
-    const sorted = [...files];
-    if (sortConfig) {
-      const direction = sortConfig.direction === "asc" ? 1 : -1;
-      sorted.sort((a, b) => {
-        switch (sortConfig.field) {
-          case "file_name":
-            return direction * a.file_name.localeCompare(b.file_name, "zh");
-          case "ext":
-            return direction * a.ext.localeCompare(b.ext);
-          case "modified_ts":
-            return direction * (a.modified_ts - b.modified_ts);
-          case "size":
-            return direction * (Number(a.size) - Number(b.size));
-          default:
-            return 0;
-        }
-      });
-    }
-    return sorted;
-  }, [files, sortConfig, isCustomOrder]);
 
   useEffect(() => {
     setSelectedMap((prev) => {
@@ -114,8 +86,8 @@ function App() {
   }, [files]);
 
   const selectedFiles = useMemo(
-    () => sortedFiles.filter((file) => selectedMap[file.path] ?? true),
-    [sortedFiles, selectedMap]
+    () => files.filter((file) => selectedMap[file.path] ?? true),
+    [files, selectedMap]
   );
 
   const handleToggleFile = useCallback((path: string, checked: boolean) => {
@@ -150,7 +122,7 @@ function App() {
         req: {
           folder_path: folderPath,
           files: selectedFiles,
-          sort_mode: sortConfig.field === "modified_ts" ? "ModifiedAsc" : "FileNameAsc",
+          sort_mode: sortConfig?.field === "modified_ts" ? "ModifiedAsc" : "FileNameAsc",
           output_file_name: customName.trim() ? customName.trim() : null
         }
       });
@@ -253,33 +225,27 @@ function App() {
 
         <section>
           <FileList
-            files={sortedFiles}
+            files={files}
             emptyMessage={folderPath ? "此目录下没有可合并的文件。" : "尚未选择发票文件夹。"}
             selected={selectedMap}
             onToggle={handleToggleFile}
             onToggleAll={handleToggleAll}
-            sortConfig={isCustomOrder ? null : sortConfig}
+            sortConfig={sortConfig}
             onRequestSort={(field) => {
-              setSortConfig((prev) => {
-                if (prev && prev.field === field) {
-                  return { field, direction: prev.direction === "asc" ? "desc" : "asc" };
-                }
-                return { field, direction: "asc" };
-              });
-              setIsCustomOrder(false);
+              const nextDirection =
+                sortConfig && sortConfig.field === field && sortConfig.direction === "asc" ? "desc" : "asc";
+              setSortConfig({ field, direction: nextDirection });
+              setFiles((prev) => sortList(prev, field, nextDirection));
             }}
             onReorder={(fromIndex, toIndex) => {
-              const next = [...sortedFiles];
-              const [moved] = next.splice(fromIndex, 1);
-              next.splice(toIndex, 0, moved);
-              setFiles(next);
-              setIsCustomOrder(true);
+              setFiles((prev) => arrayMove(prev, fromIndex, toIndex));
+              setSortConfig(null);
             }}
           />
         </section>
 
         <p className="inline-hint" style={{ marginTop: 12 }}>
-          已选择 {selectedFiles.length} / {sortedFiles.length} 个文件
+          已选择 {selectedFiles.length} / {files.length} 个文件
         </p>
 
         <section style={{ marginTop: 24 }}>
@@ -315,3 +281,32 @@ function App() {
 }
 
 export default App;
+
+type SortField = "file_name" | "ext" | "modified_ts" | "size";
+type SortDirection = "asc" | "desc";
+type SortConfig = { field: SortField; direction: SortDirection };
+
+const sortList = (list: InvoiceFile[], field: SortField, direction: SortDirection) => {
+  const factor = direction === "asc" ? 1 : -1;
+  return [...list].sort((a, b) => {
+    switch (field) {
+      case "file_name":
+        return factor * a.file_name.localeCompare(b.file_name, "zh");
+      case "ext":
+        return factor * a.ext.localeCompare(b.ext);
+      case "modified_ts":
+        return factor * (a.modified_ts - b.modified_ts);
+      case "size":
+        return factor * (Number(a.size) - Number(b.size));
+      default:
+        return 0;
+    }
+  });
+};
+
+const arrayMove = <T,>(array: T[], from: number, to: number) => {
+  const next = [...array];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+};
