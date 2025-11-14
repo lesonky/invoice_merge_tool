@@ -8,7 +8,7 @@ interface FileListProps {
   selected: Record<string, boolean>;
   onToggle: (path: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
-  onReorder: (fromPath: string, toPath: string) => void;
+  onReorder: (fromIndex: number, toIndex: number) => void;
 }
 
 const FileList: React.FC<FileListProps> = ({
@@ -71,7 +71,7 @@ const FileList: React.FC<FileListProps> = ({
               key={file.path}
               draggable
               onDragStart={(event) => {
-                event.dataTransfer.setData("text/plain", file.path);
+                event.dataTransfer.setData("text/plain", String(index));
                 event.dataTransfer.effectAllowed = "move";
               }}
               onDragOver={(event) => {
@@ -80,9 +80,9 @@ const FileList: React.FC<FileListProps> = ({
               }}
               onDrop={(event) => {
                 event.preventDefault();
-                const fromPath = event.dataTransfer.getData("text/plain");
-                if (fromPath && fromPath !== file.path) {
-                  onReorder(fromPath, file.path);
+                const from = Number(event.dataTransfer.getData("text/plain"));
+                if (!Number.isNaN(from) && from !== index) {
+                  onReorder(from, index);
                 }
               }}
             >

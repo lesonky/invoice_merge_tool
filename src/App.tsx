@@ -268,18 +268,11 @@ function App() {
             selected={selectedMap}
             onToggle={handleToggleFile}
             onToggleAll={handleToggleAll}
-            onReorder={(fromPath, toPath) => {
-              setFiles((prev) => {
-                const next = [...prev];
-                const fromIndex = next.findIndex((item) => item.path === fromPath);
-                const toIndex = next.findIndex((item) => item.path === toPath);
-                if (fromIndex === -1 || toIndex === -1) {
-                  return prev;
-                }
-                const [moved] = next.splice(fromIndex, 1);
-                next.splice(toIndex, 0, moved);
-                return next;
-              });
+            onReorder={(fromIndex, toIndex) => {
+              const next = [...sortedFiles];
+              const [moved] = next.splice(fromIndex, 1);
+              next.splice(toIndex, 0, moved);
+              setFiles(next);
               setIsCustomOrder(true);
             }}
           />
