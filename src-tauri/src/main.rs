@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use chrono::{DateTime, Local};
-use image::{DynamicImage, GenericImageView, ImageBuffer, RgbImage, RgbaImage};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgb, RgbImage, RgbaImage};
 use libheif_rs::{ColorSpace, HeifContext, RgbChroma};
 use lopdf::{Document, Object, ObjectId};
 use serde::{Deserialize, Serialize};
@@ -269,7 +269,7 @@ fn emit_progress(window: &Window, current: usize, total: usize, phase: ProgressP
 }
 
 fn convert_image_to_pdf(path: &Path) -> Result<(PathBuf, TempPath), MergeError> {
-    let image = load_dynamic_image(path)?;
+    let image = flatten_transparent(load_dynamic_image(path)?);
     let (doc, page1, layer1) =
         printpdf::PdfDocument::new("Invoice Image", printpdf::Mm(210.0), printpdf::Mm(297.0), "Layer");
     let current_layer = doc.get_page(page1).get_layer(layer1);
@@ -341,6 +341,36 @@ fn load_dynamic_image(path: &Path) -> Result<DynamicImage, MergeError> {
     } else {
         image::open(path).map_err(|err| MergeError::Image(err.to_string()))
     }
+}
+
+fn flatten_transparent(image: DynamicImage) -> DynamicImage {
+    match image {
+        DynamicImage::ImageRgba8(ref rgba) => DynamicImage::ImageRgb8(flatten_rgba(rgba)),
+        DynamicImage::ImageRgba16(ref rgba) => {
+            let converted = DynamicImage::ImageRgba16(rgba.clone()).to_rgba8();
+            DynamicImage::ImageRgb8(flatten_rgba(&converted))
+        }
+        _ => image,
+    }
+}
+
+fn flatten_rgba(buffer: &RgbaImage) -> RgbImage {
+    let (width, height) = buffer.dimensions();
+    let mut rgb = ImageBuffer::new(width, height);
+    for (x, y, pixel) in buffer.enumerate_pixels() {
+        let [r, g, b, a] = pixel.0;
+        let alpha = (a as f32) / 255.0;
+        let out_r = blend_channel(r, alpha);
+        let out_g = blend_channel(g, alpha);
+        let out_b = blend_channel(b, alpha);
+        rgb.put_pixel(x, y, Rgb([out_r, out_g, out_b]));
+    }
+    rgb
+}
+
+fn blend_channel(channel: u8, alpha: f32) -> u8 {
+    let value = channel as f32 * alpha + 255.0 * (1.0 - alpha);
+    value.round().clamp(0.0, 255.0) as u8
 }
 
 fn decode_heic(path: &Path) -> Result<DynamicImage, MergeError> {
