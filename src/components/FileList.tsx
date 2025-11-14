@@ -1,6 +1,20 @@
 import type { InvoiceFile } from "@shared-types/index";
 import { formatBytes, formatDate } from "@lib/format";
 import React, { useEffect, useMemo, useRef } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 type SortField = "file_name" | "ext" | "modified_ts" | "size";
 type SortDirection = "asc" | "desc";
@@ -32,7 +46,27 @@ const FileList: React.FC<FileListProps> = ({
     [files, selected]
   );
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
-  const dragIndexRef = useRef<number | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 }
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const fromIndex = files.findIndex((file) => file.path === activeId);
+    const toIndex = files.findIndex((file) => file.path === overId);
+    if (fromIndex === -1 || toIndex === -1) {
+      return;
+    }
+    onReorder(fromIndex, toIndex);
+  };
 
   useEffect(() => {
     if (!headerCheckboxRef.current) return;
@@ -86,49 +120,55 @@ const FileList: React.FC<FileListProps> = ({
             ))}
           </tr>
         </thead>
-        <tbody>
-          {files.map((file, index) => (
-            <tr
-              key={file.path}
-              draggable
-              onDragStart={(event) => {
-                dragIndexRef.current = index;
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", file.path);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-              }}
-              onDragEnd={() => {
-                dragIndexRef.current = null;
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                const from = dragIndexRef.current;
-                if (typeof from === "number" && from !== index) {
-                  onReorder(from, index);
-                }
-                dragIndexRef.current = null;
-              }}
-            >
-              <td>
-                <input
-                  type="checkbox"
-                  checked={selected[file.path] ?? true}
-                  onChange={(event) => onToggle(file.path, event.target.checked)}
-                  aria-label={`选择 ${file.file_name}`}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={files.map((file) => file.path)} strategy={verticalListSortingStrategy}>
+            <tbody>
+              {files.map((file) => (
+                <SortableRow
+                  key={file.path}
+                  file={file}
+                  selected={selected[file.path] ?? true}
+                  onToggle={onToggle}
                 />
-              </td>
-              <td>{file.file_name}</td>
-              <td style={{ textTransform: "uppercase" }}>{file.ext}</td>
-              <td>{formatDate(file.modified_ts)}</td>
-              <td>{formatBytes(file.size)}</td>
-            </tr>
-          ))}
-        </tbody>
+              ))}
+            </tbody>
+          </SortableContext>
+        </DndContext>
       </table>
     </div>
+  );
+};
+
+interface SortableRowProps {
+  file: InvoiceFile;
+  selected: boolean;
+  onToggle: (path: string, checked: boolean) => void;
+}
+
+const SortableRow: React.FC<SortableRowProps> = ({ file, selected, onToggle }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: file.path });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.7 : 1,
+    cursor: "grab"
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <td>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(event) => onToggle(file.path, event.target.checked)}
+          aria-label={`选择 ${file.file_name}`}
+        />
+      </td>
+      <td>{file.file_name}</td>
+      <td style={{ textTransform: "uppercase" }}>{file.ext}</td>
+      <td>{formatDate(file.modified_ts)}</td>
+      <td>{formatBytes(file.size)}</td>
+    </tr>
   );
 };
 
