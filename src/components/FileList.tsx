@@ -8,9 +8,17 @@ interface FileListProps {
   selected: Record<string, boolean>;
   onToggle: (path: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
+  onReorder: (fromPath: string, toPath: string) => void;
 }
 
-const FileList: React.FC<FileListProps> = ({ files, emptyMessage, selected, onToggle, onToggleAll }) => {
+const FileList: React.FC<FileListProps> = ({
+  files,
+  emptyMessage,
+  selected,
+  onToggle,
+  onToggleAll,
+  onReorder
+}) => {
   const total = files.length;
   const selectedCount = useMemo(
     () => files.reduce((sum, file) => (selected[file.path] ?? true ? sum + 1 : sum), 0),
@@ -58,8 +66,26 @@ const FileList: React.FC<FileListProps> = ({ files, emptyMessage, selected, onTo
           </tr>
         </thead>
         <tbody>
-          {files.map((file) => (
-            <tr key={file.path}>
+          {files.map((file, index) => (
+            <tr
+              key={file.path}
+              draggable
+              onDragStart={(event) => {
+                event.dataTransfer.setData("text/plain", file.path);
+                event.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const fromPath = event.dataTransfer.getData("text/plain");
+                if (fromPath && fromPath !== file.path) {
+                  onReorder(fromPath, file.path);
+                }
+              }}
+            >
               <td>
                 <input
                   type="checkbox"

@@ -52,6 +52,7 @@ xattr -cr /Applications/InvoiceMergeAssistant.app
 
 Then right-click the app → “Open” once. After this first approval, you can launch it normally.
 
+## Pay me a coffee
 If this tool is helpful to you, you can buy me a coffee, thank you.
 
 ![Buy me a coffee](docs/images/pay_me_a_coffee.png)

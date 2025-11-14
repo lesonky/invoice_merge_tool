@@ -25,6 +25,7 @@ function App() {
   const [folderPath, setFolderPath] = useState<string>("");
   const [files, setFiles] = useState<InvoiceFile[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>("FileNameAsc");
+  const [isCustomOrder, setIsCustomOrder] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [statusMessage, setStatusMessage] = useState("就绪。");
   const [progress, setProgress] = useState(0);
@@ -63,6 +64,7 @@ function App() {
       const result = await invoke<InvoiceFile[]>("scan_folder_cmd", { folderPath: folder });
       setFolderPath(folder);
       setFiles(result);
+      setIsCustomOrder(false);
       setStatusMessage(`已找到 ${result.length} 个可合并文件。`);
     } catch (error) {
       console.error(error);
@@ -71,6 +73,9 @@ function App() {
   }, []);
 
   const sortedFiles = useMemo(() => {
+    if (isCustomOrder) {
+      return files;
+    }
     const sorted = [...files];
     if (sortMode === "FileNameAsc") {
       sorted.sort((a, b) => a.file_name.localeCompare(b.file_name, "zh"));
@@ -78,7 +83,7 @@ function App() {
       sorted.sort((a, b) => a.modified_ts - b.modified_ts);
     }
     return sorted;
-  }, [files, sortMode]);
+  }, [files, sortMode, isCustomOrder]);
 
   useEffect(() => {
     setSelectedMap((prev) => {
@@ -213,7 +218,10 @@ function App() {
                     name="sort"
                     value="FileNameAsc"
                     checked={sortMode === "FileNameAsc"}
-                    onChange={() => setSortMode("FileNameAsc")}
+                    onChange={() => {
+                      setSortMode("FileNameAsc");
+                      setIsCustomOrder(false);
+                    }}
                   />
                   按文件名
                 </label>
@@ -223,7 +231,10 @@ function App() {
                     name="sort"
                     value="ModifiedAsc"
                     checked={sortMode === "ModifiedAsc"}
-                    onChange={() => setSortMode("ModifiedAsc")}
+                    onChange={() => {
+                      setSortMode("ModifiedAsc");
+                      setIsCustomOrder(false);
+                    }}
                   />
                   按修改时间
                 </label>
@@ -257,6 +268,20 @@ function App() {
             selected={selectedMap}
             onToggle={handleToggleFile}
             onToggleAll={handleToggleAll}
+            onReorder={(fromPath, toPath) => {
+              setFiles((prev) => {
+                const next = [...prev];
+                const fromIndex = next.findIndex((item) => item.path === fromPath);
+                const toIndex = next.findIndex((item) => item.path === toPath);
+                if (fromIndex === -1 || toIndex === -1) {
+                  return prev;
+                }
+                const [moved] = next.splice(fromIndex, 1);
+                next.splice(toIndex, 0, moved);
+                return next;
+              });
+              setIsCustomOrder(true);
+            }}
           />
         </section>
 
