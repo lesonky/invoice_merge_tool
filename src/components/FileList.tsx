@@ -94,6 +94,7 @@ const FileList: React.FC<FileListProps> = ({
               onDragStart={(event) => {
                 dragIndexRef.current = index;
                 event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", file.path);
               }}
               onDragOver={(event) => {
                 event.preventDefault();
