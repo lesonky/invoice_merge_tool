@@ -2,6 +2,9 @@ import type { InvoiceFile } from "@shared-types/index";
 import { formatBytes, formatDate } from "@lib/format";
 import React, { useEffect, useMemo, useRef } from "react";
 
+type SortField = "file_name" | "ext" | "modified_ts" | "size";
+type SortDirection = "asc" | "desc";
+
 interface FileListProps {
   files: InvoiceFile[];
   emptyMessage: string;
@@ -9,6 +12,8 @@ interface FileListProps {
   onToggle: (path: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
+  sortConfig: { field: SortField; direction: SortDirection } | null;
+  onRequestSort: (field: SortField) => void;
 }
 
 const FileList: React.FC<FileListProps> = ({
@@ -17,7 +22,9 @@ const FileList: React.FC<FileListProps> = ({
   selected,
   onToggle,
   onToggleAll,
-  onReorder
+  onReorder,
+  sortConfig,
+  onRequestSort
 }) => {
   const total = files.length;
   const selectedCount = useMemo(
@@ -60,10 +67,23 @@ const FileList: React.FC<FileListProps> = ({
                 aria-label="全选"
               />
             </th>
-            <th style={{ width: "40%" }}>文件名</th>
-            <th style={{ width: "15%" }}>类型</th>
-            <th style={{ width: "25%" }}>修改时间</th>
-            <th style={{ width: "15%" }}>大小</th>
+            {[
+              { label: "文件名", field: "file_name", width: "40%" },
+              { label: "类型", field: "ext", width: "15%" },
+              { label: "修改时间", field: "modified_ts", width: "25%" },
+              { label: "大小", field: "size", width: "15%" }
+            ].map((column) => (
+              <th
+                key={column.field}
+                style={{ width: column.width, cursor: "pointer", userSelect: "none" }}
+                onClick={() => onRequestSort(column.field as SortField)}
+              >
+                {column.label}
+                {sortConfig && sortConfig.field === column.field ? (
+                  <span style={{ marginLeft: 4 }}>{sortConfig.direction === "asc" ? "↑" : "↓"}</span>
+                ) : null}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>

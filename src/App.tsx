@@ -4,7 +4,7 @@ import { open as openDialog } from "@tauri-apps/api/dialog";
 import { listen } from "@tauri-apps/api/event";
 import FileList from "@components/FileList";
 import MergeSummaryDialog from "@components/MergeSummaryDialog";
-import type { InvoiceFile, MergeResult, ProgressPayload, SortMode } from "@shared-types/index";
+import type { InvoiceFile, MergeResult, ProgressPayload } from "@shared-types/index";
 
 interface DialogState {
   open: boolean;
@@ -21,10 +21,16 @@ const defaultDialog: DialogState = {
   failed: []
 };
 
+type SortField = "file_name" | "ext" | "modified_ts" | "size";
+type SortDirection = "asc" | "desc";
+
 function App() {
   const [folderPath, setFolderPath] = useState<string>("");
   const [files, setFiles] = useState<InvoiceFile[]>([]);
-  const [sortMode, setSortMode] = useState<SortMode>("FileNameAsc");
+  const [sortConfig, setSortConfig] = useState<{ field: SortField; direction: SortDirection }>({
+    field: "file_name",
+    direction: "asc"
+  });
   const [isCustomOrder, setIsCustomOrder] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [statusMessage, setStatusMessage] = useState("就绪。");
@@ -77,13 +83,25 @@ function App() {
       return files;
     }
     const sorted = [...files];
-    if (sortMode === "FileNameAsc") {
-      sorted.sort((a, b) => a.file_name.localeCompare(b.file_name, "zh"));
-    } else if (sortMode === "ModifiedAsc") {
-      sorted.sort((a, b) => a.modified_ts - b.modified_ts);
+    if (sortConfig) {
+      const direction = sortConfig.direction === "asc" ? 1 : -1;
+      sorted.sort((a, b) => {
+        switch (sortConfig.field) {
+          case "file_name":
+            return direction * a.file_name.localeCompare(b.file_name, "zh");
+          case "ext":
+            return direction * a.ext.localeCompare(b.ext);
+          case "modified_ts":
+            return direction * (a.modified_ts - b.modified_ts);
+          case "size":
+            return direction * (Number(a.size) - Number(b.size));
+          default:
+            return 0;
+        }
+      });
     }
     return sorted;
-  }, [files, sortMode, isCustomOrder]);
+  }, [files, sortConfig, isCustomOrder]);
 
   useEffect(() => {
     setSelectedMap((prev) => {
@@ -132,7 +150,7 @@ function App() {
         req: {
           folder_path: folderPath,
           files: selectedFiles,
-          sort_mode: sortMode,
+          sort_mode: sortConfig.field === "modified_ts" ? "ModifiedAsc" : "FileNameAsc",
           output_file_name: customName.trim() ? customName.trim() : null
         }
       });
@@ -170,7 +188,7 @@ function App() {
     } finally {
       setIsMerging(false);
     }
-  }, [folderPath, selectedFiles, sortMode, customName]);
+  }, [folderPath, selectedFiles, sortConfig, customName]);
 
   const closeDialog = useCallback(() => setDialog(defaultDialog), []);
 
@@ -209,37 +227,6 @@ function App() {
 
         <section style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
-            <div>
-              <label className="inline-hint">排序方式</label>
-              <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
-                <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input
-                    type="radio"
-                    name="sort"
-                    value="FileNameAsc"
-                    checked={sortMode === "FileNameAsc"}
-                    onChange={() => {
-                      setSortMode("FileNameAsc");
-                      setIsCustomOrder(false);
-                    }}
-                  />
-                  按文件名
-                </label>
-                <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input
-                    type="radio"
-                    name="sort"
-                    value="ModifiedAsc"
-                    checked={sortMode === "ModifiedAsc"}
-                    onChange={() => {
-                      setSortMode("ModifiedAsc");
-                      setIsCustomOrder(false);
-                    }}
-                  />
-                  按修改时间
-                </label>
-              </div>
-            </div>
             <div style={{ flex: 1 }}>
               <label className="inline-hint" htmlFor="outputName">
                 输出文件名（可选）
@@ -259,6 +246,9 @@ function App() {
               />
             </div>
           </div>
+          <p className="inline-hint" style={{ marginTop: 8 }}>
+            提示：点击列表表头可排序，再次点击切换升/降序；按住行可拖拽调整顺序。
+          </p>
         </section>
 
         <section>
@@ -268,6 +258,16 @@ function App() {
             selected={selectedMap}
             onToggle={handleToggleFile}
             onToggleAll={handleToggleAll}
+            sortConfig={isCustomOrder ? null : sortConfig}
+            onRequestSort={(field) => {
+              setSortConfig((prev) => {
+                if (prev && prev.field === field) {
+                  return { field, direction: prev.direction === "asc" ? "desc" : "asc" };
+                }
+                return { field, direction: "asc" };
+              });
+              setIsCustomOrder(false);
+            }}
             onReorder={(fromIndex, toIndex) => {
               const next = [...sortedFiles];
               const [moved] = next.splice(fromIndex, 1);
