@@ -47,3 +47,7 @@ xattr -cr /Applications/InvoiceMergeAssistant.app
 ## 贡献
 
 请参考 `AGENTS.md` 获取代码规范、测试与 PR 要求，欢迎提交 Issue / PR，一起完善更多文件格式支持与体验。 
+
+如果这个软件对你有用，可以请我喝杯咖啡，谢谢。
+
+![请我喝杯咖啡](docs/images/pay_me_a_coffee.png)
