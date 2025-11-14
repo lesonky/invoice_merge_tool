@@ -33,6 +33,7 @@ pub struct InvoiceFile {
 pub enum SortMode {
     FileNameAsc,
     ModifiedAsc,
+    Custom,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -143,6 +144,7 @@ fn merge_invoices(window: &Window, mut req: MergeRequest) -> Result<MergeResult,
             .files
             .sort_by(|a, b| a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase())),
         SortMode::ModifiedAsc => req.files.sort_by_key(|f| f.modified_ts),
+        SortMode::Custom => {}
     }
 
     let total_files = req.files.len();

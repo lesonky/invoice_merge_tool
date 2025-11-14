@@ -122,7 +122,7 @@ function App() {
         req: {
           folder_path: folderPath,
           files: selectedFiles,
-          sort_mode: sortConfig?.field === "modified_ts" ? "ModifiedAsc" : "FileNameAsc",
+          sort_mode: sortConfig ? (sortConfig.field === "modified_ts" ? "ModifiedAsc" : "FileNameAsc") : "Custom",
           output_file_name: customName.trim() ? customName.trim() : null
         }
       });

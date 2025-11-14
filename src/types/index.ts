@@ -6,7 +6,7 @@ export type InvoiceFile = {
   size: number;
 };
 
-export type SortMode = "FileNameAsc" | "ModifiedAsc";
+export type SortMode = "FileNameAsc" | "ModifiedAsc" | "Custom";
 
 export interface MergeResult {
   success: boolean;
