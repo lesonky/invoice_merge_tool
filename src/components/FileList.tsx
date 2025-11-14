@@ -25,6 +25,7 @@ const FileList: React.FC<FileListProps> = ({
     [files, selected]
   );
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
+  const dragIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!headerCheckboxRef.current) return;
@@ -71,19 +72,23 @@ const FileList: React.FC<FileListProps> = ({
               key={file.path}
               draggable
               onDragStart={(event) => {
-                event.dataTransfer.setData("text/plain", String(index));
+                dragIndexRef.current = index;
                 event.dataTransfer.effectAllowed = "move";
               }}
               onDragOver={(event) => {
                 event.preventDefault();
                 event.dataTransfer.dropEffect = "move";
               }}
+              onDragEnd={() => {
+                dragIndexRef.current = null;
+              }}
               onDrop={(event) => {
                 event.preventDefault();
-                const from = Number(event.dataTransfer.getData("text/plain"));
-                if (!Number.isNaN(from) && from !== index) {
+                const from = dragIndexRef.current;
+                if (typeof from === "number" && from !== index) {
                   onReorder(from, index);
                 }
+                dragIndexRef.current = null;
               }}
             >
               <td>
