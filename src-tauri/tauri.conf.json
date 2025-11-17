@@ -16,6 +16,7 @@
       "fs": {
         "all": false,
         "readDir": true,
+        "readFile": true,
         "scope": ["**"]
       },
       "dialog": {
@@ -27,6 +28,10 @@
       },
       "shell": {
         "open": true
+      },
+      "protocol": {
+        "asset": true,
+        "assetScope": ["**"]
       }
     },
     "bundle": {

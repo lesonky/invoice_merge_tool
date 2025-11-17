@@ -219,7 +219,7 @@ function App() {
             </div>
           </div>
           <p className="inline-hint" style={{ marginTop: 8 }}>
-            提示：点击列表表头可排序，再次点击切换升/降序；按住行可拖拽调整顺序。
+            提示：点击“页面”可进入预览视图，按住缩略图或表格行即可拖拽调整顺序，表头依旧支持排序切换。
           </p>
         </section>
 
