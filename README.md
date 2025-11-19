@@ -2,7 +2,7 @@
 
 Invoice Merge Assistant is a lightweight cross-platform desktop tool built with React, TypeScript, and Tauri. It focuses on one workflow: taking a folder full of invoice PDFs or images (JPG/PNG/HEIC) and producing a single clean PDF bundle—ideal for expense reports, finance audits, and archival. Everything stays local, so sensitive data never leaves your machine.
 
-![App snapshot](docs/snapshot.png)
+![App snapshot](docs/images/snapshot_v2.png)
 
 [简体中文 README](README_CN.md)
 

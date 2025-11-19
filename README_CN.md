@@ -2,7 +2,7 @@
 
 发票合并助手是一款基于 React + TypeScript + Tauri 的跨平台桌面工具，用于将一个文件夹中的发票 PDF、图片（JPG/PNG/HEIC）快速合并为一个标准 PDF，适合报销、财务归档或客户资料整理等场景。所有数据都在本地处理，不会上传到云端。
 
-![应用截图](docs/snapshot.png)
+![应用截图](docs/images/snapshot_v2.png)
 
 ## 核心特性
 
