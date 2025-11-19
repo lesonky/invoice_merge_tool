@@ -1,377 +1,517 @@
-import type { InvoiceFile } from "@shared-types/index";
-import { formatBytes, formatDate } from "@lib/format";
-import { useFilePreviews } from "@lib/useFilePreviews";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useState, useMemo } from "react";
+import type { CSSProperties } from "react";
 import {
   DndContext,
   PointerSensor,
   closestCenter,
   useSensor,
-  useSensors
+  useSensors,
+  DragOverlay,
+  DragStartEvent,
+  DragEndEvent,
 } from "@dnd-kit/core";
-import type { DragEndEvent } from "@dnd-kit/core";
 import {
   SortableContext,
   rectSortingStrategy,
   verticalListSortingStrategy,
-  useSortable
+  useSortable,
+  arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { FilePreview } from "@lib/useFilePreviews";
-
-type SortField = "file_name" | "ext" | "modified_ts" | "size";
-type SortDirection = "asc" | "desc";
-type ViewMode = "files" | "pages";
+import { Check, FileText, GripVertical, Image as ImageIcon } from "lucide-react";
+import { formatBytes, formatDate } from "@lib/format";
+import type { InvoiceFile } from "@shared-types/index";
+import type { FilePreview, PreviewPage } from "@lib/useFilePreviews";
+import type { ThemeStyles, ViewMode } from "@shared-types/ui";
 
 interface FileListProps {
   files: InvoiceFile[];
-  emptyMessage: string;
-  selected: Record<string, boolean>;
+  viewMode: ViewMode;
+  selectedMap: Record<string, boolean>;
+  previewMap: Record<string, FilePreview>;
+  pageSelections: Record<string, number>;
+  themeStyles: ThemeStyles;
+  previewLoading: boolean;
+  translations: {
+    previewLoading: string;
+    previewUnavailable: string;
+    pageIndicator: string;
+  };
   onToggle: (path: string, checked: boolean) => void;
-  onToggleAll: (checked: boolean) => void;
-  onReorder: (fromIndex: number, toIndex: number) => void;
-  sortConfig: { field: SortField; direction: SortDirection } | null;
-  onRequestSort: (field: SortField) => void;
+  onChangePage: (path: string, delta: number) => void;
+  onReorder: (newFiles: InvoiceFile[]) => void;
+  accentPalette: Record<string, string>;
 }
 
-const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 1.5;
-
-const FileList: React.FC<FileListProps> = ({
+export default function FileList({
   files,
-  emptyMessage,
-  selected,
+  viewMode,
+  selectedMap,
+  previewMap,
+  pageSelections,
+  themeStyles,
+  previewLoading,
+  translations: t,
   onToggle,
-  onToggleAll,
+  onChangePage,
   onReorder,
-  sortConfig,
-  onRequestSort
-}) => {
-  const [viewMode, setViewMode] = useState<ViewMode>("files");
-  const [zoom, setZoom] = useState(0.85);
-  const [pageSelections, setPageSelections] = useState<Record<string, number>>({});
-  const total = files.length;
-  const selectedCount = useMemo(
-    () => files.reduce((sum, file) => (selected[file.path] ?? true ? sum + 1 : sum), 0),
-    [files, selected]
-  );
-  const headerCheckboxRef = useRef<HTMLInputElement>(null);
-  const { previews, loading: previewLoading } = useFilePreviews(files);
-  const previewMap = useMemo(() => mapPreviews(previews), [previews]);
-  const zoomPct = Math.round(zoom * 100);
+  accentPalette,
+}: FileListProps) {
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 }
+      activationConstraint: { distance: 8 },
     })
   );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id));
+  };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) {
+      setActiveDragId(null);
       return;
     }
     const activeId = String(active.id);
     const overId = String(over.id);
     const fromIndex = files.findIndex((file) => file.path === activeId);
     const toIndex = files.findIndex((file) => file.path === overId);
-    if (fromIndex === -1 || toIndex === -1) {
-      return;
+    
+    if (fromIndex !== -1 && toIndex !== -1) {
+      onReorder(arrayMove(files, fromIndex, toIndex));
     }
-    onReorder(fromIndex, toIndex);
+    setActiveDragId(null);
   };
 
-  useEffect(() => {
-    if (!headerCheckboxRef.current) return;
-    headerCheckboxRef.current.indeterminate = selectedCount > 0 && selectedCount < total;
-  }, [selectedCount, total]);
+  const handleDragCancel = () => setActiveDragId(null);
 
-  useEffect(() => {
-    setPageSelections((prev) => {
-      const next: Record<string, number> = {};
-      files.forEach((file) => {
-        const previewsForFile = previewMap[file.path]?.pages ?? [];
-        const existing = prev[file.path] ?? 0;
-        const maxIndex = previewsForFile.length ? previewsForFile.length - 1 : 0;
-        next[file.path] = Math.min(existing, maxIndex);
-      });
-      return next;
-    });
-  }, [files, previewMap]);
+  const activeDragMeta = useMemo(() => {
+    if (!activeDragId) return null;
+    const file = files.find((item) => item.path === activeDragId);
+    if (!file) return null;
+    const accent = accentPalette[file.path];
+    const fileType = file.ext.toUpperCase();
+    const previewInfo = previewMap[file.path];
+    const pages = previewInfo?.pages ?? [];
+    const pageIndex = pageSelections[file.path] ?? 0;
+    const pageCount = pages.length;
+    const previewPage = pages[pageIndex];
+    const previewError = previewInfo?.error;
+    const placeholderText = previewError ?? (previewLoading ? t.previewLoading : t.previewUnavailable);
+    return { file, accent, fileType, previewPage, placeholderText, pageCount, pageIndex };
+  }, [
+    activeDragId,
+    files,
+    accentPalette,
+    previewMap,
+    pageSelections,
+    previewLoading,
+    t,
+  ]);
 
-  const adjustZoom = (delta: number) => {
-    setZoom((prev) => {
-      const next = +(prev + delta).toFixed(2);
-      return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next));
-    });
+  const formatPageIndicator = (current: number, total: number) =>
+    t.pageIndicator.replace("{current}", String(current)).replace("{total}", String(total));
+
+  const commonProps = {
+    themeStyles,
+    onToggle,
+    onChangePage,
+    formatPageIndicator,
   };
-
-  if (!files.length) {
-    return (
-      <div style={{
-        padding: "48px 0",
-        textAlign: "center",
-        color: "#6b7280",
-        border: "1px dashed #d1d5db",
-        borderRadius: 12
-      }}>
-        {emptyMessage}
-      </div>
-    );
-  }
-
-  const tableView = (
-    <div style={{ maxHeight: 320, overflow: "auto", borderRadius: 12, border: "1px solid #e5e7eb" }}>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={files.map((file) => file.path)} strategy={verticalListSortingStrategy}>
-          <table className="file-table">
-            <thead>
-              <tr>
-                <th style={{ width: "5%" }}>
-                  <input
-                    ref={headerCheckboxRef}
-                    type="checkbox"
-                    checked={total > 0 && selectedCount === total}
-                    onChange={(event) => onToggleAll(event.target.checked)}
-                    aria-label="全选"
-                  />
-                </th>
-                {[
-                  { label: "文件名", field: "file_name", width: "40%" },
-                  { label: "类型", field: "ext", width: "15%" },
-                  { label: "修改时间", field: "modified_ts", width: "25%" },
-                  { label: "大小", field: "size", width: "15%" }
-                ].map((column) => (
-                  <th
-                    key={column.field}
-                    style={{ width: column.width, cursor: "pointer", userSelect: "none" }}
-                    onClick={() => onRequestSort(column.field as SortField)}
-                  >
-                    {column.label}
-                    {sortConfig && sortConfig.field === column.field ? (
-                      <span style={{ marginLeft: 4 }}>{sortConfig.direction === "asc" ? "↑" : "↓"}</span>
-                    ) : null}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {files.map((file) => (
-                <SortableRow
-                  key={file.path}
-                  file={file}
-                  selected={selected[file.path] ?? true}
-                  onToggle={onToggle}
-                />
-              ))}
-            </tbody>
-          </table>
-        </SortableContext>
-      </DndContext>
-    </div>
-  );
-
-  const galleryView = (
-    <div className="gallery-shell">
-      {previewLoading ? (
-        <p className="inline-hint" style={{ marginBottom: 12 }}>
-          预览生成中，请稍候…
-        </p>
-      ) : null}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={files.map((file) => file.path)} strategy={rectSortingStrategy}>
-          <div className="gallery-grid">
-            {files.map((file) => {
-              const previewPages = previewMap[file.path]?.pages ?? [];
-              const pageIndex = pageSelections[file.path] ?? 0;
-              const currentPage = previewPages[pageIndex];
-              return (
-                <SortablePreviewCard
-                  key={file.path}
-                  file={file}
-                  selected={selected[file.path] ?? true}
-                  preview={currentPage}
-                  pageCount={previewPages.length}
-                  pageIndex={pageIndex}
-                  zoom={zoom}
-                  loading={previewLoading && previewPages.length === 0}
-                  onToggle={onToggle}
-                  onPageChange={(nextIndex) =>
-                    setPageSelections((prev) => ({
-                      ...prev,
-                      [file.path]: Math.max(0, Math.min(nextIndex, Math.max(previewPages.length - 1, 0)))
-                    }))
-                  }
-                />
-              );
-            })}
-          </div>
-        </SortableContext>
-      </DndContext>
-    </div>
-  );
 
   return (
-    <div>
-      <div className="file-list-toolbar">
-        <div className="zoom-control">
-          <button
-            type="button"
-            className="toolbar-button"
-            onClick={() => adjustZoom(-0.15)}
-            disabled={viewMode !== "pages" || zoom <= MIN_ZOOM}
-            aria-label="缩小"
-          >
-            −
-          </button>
-          <span className="zoom-label">{zoomPct}%</span>
-          <button
-            type="button"
-            className="toolbar-button"
-            onClick={() => adjustZoom(0.15)}
-            disabled={viewMode !== "pages" || zoom >= MAX_ZOOM}
-            aria-label="放大"
-          >
-            +
-          </button>
-        </div>
-        <div className="view-toggle">
-          <button
-            type="button"
-            className={`toolbar-button ${viewMode === "files" ? "active" : ""}`}
-            onClick={() => setViewMode("files")}
-          >
-            文件
-          </button>
-          <button
-            type="button"
-            className={`toolbar-button ${viewMode === "pages" ? "active" : ""}`}
-            onClick={() => setViewMode("pages")}
-          >
-            页面
-          </button>
-        </div>
-      </div>
-      {viewMode === "files" ? tableView : galleryView}
-    </div>
-  );
-};
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <SortableContext
+        items={files.map((file) => file.path)}
+        strategy={viewMode === "grid" ? rectSortingStrategy : verticalListSortingStrategy}
+      >
+        <div className={viewMode === "grid" ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" : "flex flex-col gap-3"}>
+          {files.map((file) => {
+            const selected = selectedMap[file.path] ?? true;
+            const accent = accentPalette[file.path];
+            const fileType = file.ext.toUpperCase();
+            const previewInfo = previewMap[file.path];
+            const pages = previewInfo?.pages ?? [];
+            const pageIndex = pageSelections[file.path] ?? 0;
+            const pageCount = pages.length;
+            const previewPage = pages[pageIndex];
+            const previewError = previewInfo?.error;
+            const placeholderText = previewError ?? (previewLoading ? t.previewLoading : t.previewUnavailable);
 
-interface SortableRowProps {
-  file: InvoiceFile;
-  selected: boolean;
-  onToggle: (path: string, checked: boolean) => void;
+            const itemProps = {
+              ...commonProps,
+              file,
+              selected,
+              fileType,
+              accent,
+              previewPage,
+              placeholderText,
+              pageCount,
+              pageIndex,
+            };
+
+            return viewMode === "grid" ? (
+              <SortableGridCard key={file.path} {...itemProps} />
+            ) : (
+              <SortableListItem key={file.path} {...itemProps} />
+            );
+          })}
+        </div>
+      </SortableContext>
+      <DragOverlay dropAnimation={null}>
+        {activeDragMeta ? (
+          viewMode === "grid" ? (
+            <DragPreviewCard
+              {...activeDragMeta}
+              themeStyles={themeStyles}
+              formatPageIndicator={formatPageIndicator}
+            />
+          ) : (
+            <DragPreviewListItem
+              {...activeDragMeta}
+              themeStyles={themeStyles}
+              formatPageIndicator={formatPageIndicator}
+            />
+          )
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  );
 }
 
-const SortableRow: React.FC<SortableRowProps> = ({ file, selected, onToggle }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: file.path });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.7 : 1,
-    cursor: "grab"
-  };
-
-  return (
-    <tr ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <td>
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={(event) => onToggle(file.path, event.target.checked)}
-          aria-label={`选择 ${file.file_name}`}
-        />
-      </td>
-      <td>{file.file_name}</td>
-      <td style={{ textTransform: "uppercase" }}>{file.ext}</td>
-      <td>{formatDate(file.modified_ts)}</td>
-      <td>{formatBytes(file.size)}</td>
-    </tr>
-  );
-};
-
-interface SortablePreviewCardProps {
+interface ItemProps {
   file: InvoiceFile;
   selected: boolean;
-  preview?: { pageNumber: number; url: string };
+  fileType: string;
+  accent: string;
+  previewPage?: PreviewPage;
+  placeholderText: string;
   pageCount: number;
   pageIndex: number;
-  zoom: number;
-  loading: boolean;
+  themeStyles: ThemeStyles;
   onToggle: (path: string, checked: boolean) => void;
-  onPageChange: (index: number) => void;
+  onChangePage: (path: string, delta: number) => void;
+  formatPageIndicator: (current: number, total: number) => string;
 }
 
-const SortablePreviewCard: React.FC<SortablePreviewCardProps> = ({
+function SortableGridCard({
   file,
   selected,
-  preview,
+  fileType,
+  accent,
+  previewPage,
+  placeholderText,
   pageCount,
   pageIndex,
-  zoom,
-  loading,
+  themeStyles,
   onToggle,
-  onPageChange
-}) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: file.path });
-  const width = 220 * zoom;
-  const previewHeight = width * 0.65;
-  const style: React.CSSProperties = {
+  onChangePage,
+  formatPageIndicator,
+}: ItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: file.path,
+  });
+  const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.85 : 1,
-    cursor: "grab",
-    width
+    transition: isDragging ? undefined : transition,
+    zIndex: isDragging ? 40 : undefined,
   };
 
-  const canPrev = pageCount > 1 && pageIndex > 0;
-  const canNext = pageCount > 1 && pageIndex < pageCount - 1;
+  const handleCheckboxClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggle(file.path, !selected);
+  };
 
   return (
-    <div ref={setNodeRef} className="gallery-card" style={style} {...attributes} {...listeners}>
-      <div className="gallery-card__thumb" style={{ height: previewHeight }}>
-        {preview ? (
-          <img src={preview.url} alt={`${file.file_name} 第 ${preview.pageNumber} 页`} />
-        ) : (
-          <div className="gallery-card__placeholder">{loading ? "加载中…" : "无法生成预览"}</div>
-        )}
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`group relative rounded-2xl border p-3 cursor-grab active:cursor-grabbing transition-all flex flex-col h-[320px] ${
+        selected ? `${themeStyles.cardSelected} shadow-lg` : themeStyles.card
+      }`}
+    >
+      {/* Top Row: Checkbox & Badge */}
+      <div className="flex items-center justify-between mb-3 z-10">
+        <div
+          onClick={handleCheckboxClick}
+          className={`w-6 h-6 rounded-full border flex items-center justify-center transition cursor-pointer ${
+            selected ? "bg-indigo-500 border-indigo-500 text-white" : themeStyles.checkboxBase
+          }`}
+        >
+          <Check size={14} strokeWidth={3} className={selected ? "opacity-100" : "opacity-0"} />
+        </div>
+        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${themeStyles.pill}`}>
+          {fileType}
+        </span>
       </div>
-      <label className="gallery-card__meta">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={(event) => onToggle(file.path, event.target.checked)}
-          aria-label={`选择 ${file.file_name}`}
-        />
-        <span className="gallery-card__name" title={file.file_name}>
-          {file.file_name}
-        </span>
-      </label>
-      <div className="gallery-card__footer">
-        <span className="gallery-card__page-hint">
-          {pageCount ? `第 ${pageIndex + 1} / ${pageCount} 页` : file.ext.toUpperCase()}
-        </span>
-        {pageCount > 1 ? (
-          <div className="gallery-card__pager">
-            <button type="button" onClick={() => onPageChange(pageIndex - 1)} disabled={!canPrev} aria-label="上一页">
+
+      {/* Middle: Preview */}
+      <div className="flex-1 flex items-center justify-center relative overflow-hidden rounded-lg mb-3 bg-black/20">
+        {previewPage ? (
+          <img
+            src={previewPage.url}
+            alt={`${file.file_name} - page ${previewPage.pageNumber}`}
+            className="w-full h-full object-contain"
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center text-slate-500 gap-2">
+             <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center text-white/20"
+              style={{ background: accent ? `${accent}20` : undefined }}
+            >
+              {fileType === "PDF" ? <FileText className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+            </div>
+          </div>
+        )}
+        
+        {/* Page Navigation (Overlay) */}
+        {pageCount > 1 && (
+          <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full backdrop-blur-sm border border-white/10"
+               onPointerDown={(e) => e.stopPropagation()} // Prevent drag start
+          >
+            <button
+              type="button"
+              className="hover:text-indigo-400 disabled:opacity-30"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChangePage(file.path, -1);
+              }}
+              disabled={pageIndex === 0}
+            >
               ‹
             </button>
-            <button type="button" onClick={() => onPageChange(pageIndex + 1)} disabled={!canNext} aria-label="下一页">
+            <span className="mx-1 font-mono">{pageIndex + 1}/{pageCount}</span>
+            <button
+              type="button"
+              className="hover:text-indigo-400 disabled:opacity-30"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChangePage(file.path, 1);
+              }}
+              disabled={pageIndex === pageCount - 1}
+            >
+              ›
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom: File Info */}
+      <div className="mt-auto">
+        <p className={`text-sm font-medium truncate mb-1 ${selected ? "text-indigo-400" : themeStyles.textHead}`}>
+          {file.file_name}
+        </p>
+        <div className="flex items-center justify-between text-[11px]">
+          <span className={themeStyles.textSub}>{formatBytes(file.size)}</span>
+          <span className={themeStyles.textSub}>Page {pageIndex + 1}/{pageCount || 1}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SortableListItem({
+  file,
+  selected,
+  fileType,
+  previewPage,
+  placeholderText,
+  pageCount,
+  pageIndex,
+  themeStyles,
+  onToggle,
+  onChangePage,
+  formatPageIndicator,
+}: ItemProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id: file.path,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition: isDragging ? undefined : transition,
+    zIndex: isDragging ? 30 : undefined,
+  };
+  const handleCheckboxClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggle(file.path, !selected);
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`w-full flex items-center gap-4 rounded-2xl border px-4 py-3 text-left cursor-grab active:cursor-grabbing transition ${
+        selected ? `${themeStyles.cardSelected} shadow-md` : themeStyles.card
+      }`}
+    >
+      <div className="w-20 h-20 rounded-xl overflow-hidden border border-white/10 bg-black/10 flex items-center justify-center shrink-0">
+        {previewPage ? (
+          <img src={previewPage.url} alt={file.file_name} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-xs text-slate-400 px-2 text-center leading-tight">{placeholderText}</span>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-semibold truncate ${themeStyles.textHead}`}>{file.file_name}</p>
+        <p className={`text-xs ${themeStyles.textSub}`}>
+          {formatDate(file.modified_ts)} · {formatBytes(file.size)}
+        </p>
+        {pageCount > 1 ? (
+          <div className="flex items-center gap-2 mt-1 text-[11px] text-indigo-400">
+            <button
+              type="button"
+              className="px-1 rounded border border-indigo-500/30"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onChangePage(file.path, -1);
+              }}
+              disabled={pageIndex === 0}
+            >
+              ‹
+            </button>
+            <span>{formatPageIndicator(pageIndex + 1, pageCount)}</span>
+            <button
+              type="button"
+              className="px-1 rounded border border-indigo-500/30"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onChangePage(file.path, 1);
+              }}
+              disabled={pageIndex === pageCount - 1}
+            >
               ›
             </button>
           </div>
         ) : null}
       </div>
+      <span className={`text-[10px] font-bold px-3 py-1 rounded-full border ${themeStyles.pill}`}>{fileType}</span>
+      <div
+        onClick={handleCheckboxClick}
+        onPointerDown={(e) => e.stopPropagation()}
+        className={`w-6 h-6 rounded-full border flex items-center justify-center transition cursor-pointer ${
+          selected ? "bg-indigo-500 border-indigo-500 text-white" : themeStyles.checkboxBase
+        }`}
+      >
+        <Check size={14} strokeWidth={3} className={selected ? "opacity-100" : "opacity-0"} />
+      </div>
     </div>
   );
-};
+}
 
-const mapPreviews = (previews: FilePreview[]) => {
-  const map: Record<string, FilePreview> = {};
-  previews.forEach((item) => {
-    map[item.file.path] = item;
-  });
-  return map;
-};
+interface DragPreviewProps {
+  file: InvoiceFile;
+  fileType: string;
+  accent?: string;
+  previewPage?: PreviewPage;
+  placeholderText: string;
+  pageCount: number;
+  pageIndex: number;
+  themeStyles: ThemeStyles;
+  formatPageIndicator: (current: number, total: number) => string;
+}
 
-export default FileList;
+const DragPreviewCard = ({
+  file,
+  fileType,
+  accent,
+  previewPage,
+  placeholderText,
+  pageCount,
+  pageIndex,
+  themeStyles,
+  formatPageIndicator,
+}: DragPreviewProps) => (
+  <div className={`rounded-2xl border p-3 w-[280px] h-[320px] flex flex-col ${themeStyles.cardSelected} shadow-2xl`}>
+    {/* Top Row: Checkbox & Badge */}
+    <div className="flex items-center justify-between mb-3">
+      <div
+        className={`w-6 h-6 rounded-full border flex items-center justify-center bg-indigo-500 border-indigo-500 text-white`}
+      >
+        <Check size={14} strokeWidth={3} />
+      </div>
+      <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase tracking-wider ${themeStyles.pill}`}>
+        {fileType}
+      </span>
+    </div>
+
+    {/* Middle: Preview */}
+    <div className="flex-1 flex items-center justify-center relative overflow-hidden rounded-lg mb-3 bg-black/20">
+      {previewPage ? (
+        <img src={previewPage.url} alt={`${file.file_name} dragging`} className="w-full h-full object-contain" />
+      ) : (
+        <div className="flex flex-col items-center justify-center text-slate-500 gap-2">
+             <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center text-white/20"
+              style={{ background: accent ? `${accent}20` : undefined }}
+            >
+              {fileType === "PDF" ? <FileText className="w-6 h-6" /> : <ImageIcon className="w-6 h-6" />}
+            </div>
+          </div>
+      )}
+      {pageCount > 1 && (
+        <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] px-2 py-1 rounded-full backdrop-blur-sm border border-white/10">
+          <span className="font-mono">{pageIndex + 1}/{pageCount}</span>
+        </div>
+      )}
+    </div>
+
+    {/* Bottom: File Info */}
+    <div className="mt-auto">
+      <p className="text-sm font-medium truncate mb-1 text-indigo-400">
+        {file.file_name}
+      </p>
+      <div className="flex items-center justify-between text-[11px]">
+        <span className={themeStyles.textSub}>{formatBytes(file.size)}</span>
+        <span className={themeStyles.textSub}>Page {pageIndex + 1}/{pageCount || 1}</span>
+      </div>
+    </div>
+  </div>
+);
+
+const DragPreviewListItem = ({
+  file,
+  fileType,
+  previewPage,
+  placeholderText,
+  pageCount,
+  pageIndex,
+  themeStyles,
+  formatPageIndicator,
+}: DragPreviewProps) => (
+  <div
+    className={`flex items-center gap-4 rounded-2xl border px-4 py-3 min-w-[600px] ${themeStyles.cardSelected} shadow-2xl`}
+  >
+    <div className="w-20 h-20 rounded-xl overflow-hidden border border-white/10 bg-black/10 flex items-center justify-center shrink-0">
+      {previewPage ? (
+        <img src={previewPage.url} alt={`${file.file_name} dragging`} className="w-full h-full object-cover" />
+      ) : (
+        <span className="text-xs text-slate-400 px-2 text-center leading-tight">{placeholderText}</span>
+      )}
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className={`text-sm font-semibold truncate ${themeStyles.textHead}`}>{file.file_name}</p>
+      <p className={`text-xs ${themeStyles.textSub}`}>
+        {formatDate(file.modified_ts)} · {formatBytes(file.size)}
+      </p>
+      {pageCount > 1 ? (
+        <p className="text-[11px] text-indigo-300 mt-1">{formatPageIndicator(pageIndex + 1, pageCount)}</p>
+      ) : null}
+    </div>
+    <span className={`text-[10px] font-bold px-3 py-1 rounded-full border ${themeStyles.pill}`}>{fileType}</span>
+  </div>
+);

@@ -21,6 +21,7 @@ Front-end: cover pure helpers and hooks with Vitest/React Testing Library via `n
 
 ## Commit & Pull Request Guidelines
 Adopt Conventional Commits (`feat: add merge progress emitter`, `fix: clamp heic decoder errors`) so changelogs stay scriptable. Keep subject lines under 72 chars and mention the affected layer (`frontend`, `tauri`, `docs`). For PRs, include: purpose summary, testing evidence (`npm run tauri dev`, `cargo test`), screenshots or GIFs for UI tweaks, and linked issue IDs. Request at least one review, ensure lint/tests pass, and note any migrations or manual QA steps.
+- When releasing a new version, ensure the version numbers in both `package.json` and `tauri.conf.json` are synchronized before tagging.
 
 ## Security & Configuration Tips
 Respect the no-network stance: do not add HTTP permissions in `tauri.conf.json` without approval. Only scan user-selected folders, and guard against path traversal by using canonicalized paths before file IO. Avoid logging sensitive filenames outside local logs, and keep release builds signed per platform requirement.

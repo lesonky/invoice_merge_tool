@@ -8,7 +8,7 @@
   },
   "package": {
     "productName": "InvoiceMergeAssistant",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "tauri": {
     "allowlist": {
@@ -53,9 +53,9 @@
     "windows": [
       {
         "label": "main",
-        "title": "Master Concept 发票合并助手",
-        "width": 1000,
-        "height": 850,
+        "title": "Invoice Merge Assistant",
+        "width": 1200,
+        "height": 950,
         "resizable": true
       }
     ]
