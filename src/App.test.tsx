@@ -223,6 +223,48 @@ describe("App", () => {
     });
   });
 
+  test("restores the last settled status when the latest overlapping selection cancels", async () => {
+    const firstSelection = deferred<{ folderLabel: string; files: InvoiceFile[] } | null>();
+    const secondSelection = deferred<{ folderLabel: string; files: InvoiceFile[] } | null>();
+    const App = await loadApp();
+    const platform = fakePlatform({
+      selectSource: vi
+        .fn()
+        .mockImplementationOnce(() => firstSelection.promise)
+        .mockImplementationOnce(() => secondSelection.promise)
+    });
+
+    render(<App platform={platform} />);
+
+    const [headerChooseButton] = screen.getAllByRole("button", { name: "选择文件夹" });
+
+    fireEvent.click(headerChooseButton);
+    expect(await screen.findByText("正在扫描文件夹…")).toBeTruthy();
+
+    fireEvent.click(headerChooseButton);
+
+    await act(async () => {
+      secondSelection.resolve(null);
+    });
+
+    expect(await screen.findByText("准备在本地合并")).toBeTruthy();
+    expect(screen.queryByText("正在扫描文件夹…")).toBeNull();
+
+    await act(async () => {
+      firstSelection.resolve({
+        folderLabel: "Stale",
+        files: [meta("stale.png", "web:stale.png")]
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("准备在本地合并")).toBeTruthy();
+      expect(screen.queryByText("正在扫描文件夹…")).toBeNull();
+      expect(screen.queryByDisplayValue("Stale")).toBeNull();
+      expect(screen.queryByText("stale.png")).toBeNull();
+    });
+  });
+
   test("shows progress updates during merge", async () => {
     const mergeCompletion = deferred<MergeResult>();
     const App = await loadApp();

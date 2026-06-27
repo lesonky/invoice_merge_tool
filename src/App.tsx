@@ -76,6 +76,7 @@ function App({ platform = getPlatform() }: AppProps) {
   const [statusState, setStatusState] = useState<StatusState>({ kind: "idle" });
   const [pageSelections, setPageSelections] = useState<Record<string, number>>({});
   const mountedRef = useRef(false);
+  const lastSettledStatusRef = useRef<StatusState>({ kind: "idle" });
   const isMergingRef = useRef(false);
   const selectRequestIdRef = useRef(0);
   const mergeRequestIdRef = useRef(0);
@@ -159,7 +160,6 @@ function App({ platform = getPlatform() }: AppProps) {
 
     const requestId = selectRequestIdRef.current + 1;
     selectRequestIdRef.current = requestId;
-    const previousStatus = statusState;
     setStatusState({ kind: "scanning" });
 
     try {
@@ -168,22 +168,26 @@ function App({ platform = getPlatform() }: AppProps) {
         return;
       }
       if (!selection) {
-        setStatusState(previousStatus);
+        setStatusState(lastSettledStatusRef.current);
         return;
       }
       setFolderPath(selection.folderLabel);
       const initial = sortList(selection.files, "file_name", "asc");
       setFiles(initial);
       setSortConfig({ field: "file_name", direction: "asc" });
-      setStatusState({ kind: "found", count: selection.files.length });
+      const nextStatus: StatusState = { kind: "found", count: selection.files.length };
+      lastSettledStatusRef.current = nextStatus;
+      setStatusState(nextStatus);
     } catch (error) {
       if (!mountedRef.current || selectRequestIdRef.current !== requestId) {
         return;
       }
       console.error(error);
-      setStatusState({ kind: "error", message: t.statusText.scanError });
+      const nextStatus: StatusState = { kind: "error", message: t.statusText.scanError };
+      lastSettledStatusRef.current = nextStatus;
+      setStatusState(nextStatus);
     }
-  }, [platform, statusState, t.statusText.scanError]);
+  }, [platform, t.statusText.scanError]);
 
   const selectedFiles = useMemo(
     () => files.filter((file) => selectedMap[file.path] ?? true),
@@ -255,7 +259,9 @@ function App({ platform = getPlatform() }: AppProps) {
           failed: result.failed_files,
           variant: "success"
         });
-        setStatusState({ kind: "idle" });
+        const nextStatus: StatusState = { kind: "idle" };
+        lastSettledStatusRef.current = nextStatus;
+        setStatusState(nextStatus);
       } else {
         setDialog({
           open: true,
@@ -264,7 +270,9 @@ function App({ platform = getPlatform() }: AppProps) {
           failed: result.failed_files,
           variant: "error"
         });
-        setStatusState({ kind: "error", message: result.message ?? t.statusText.mergeError });
+        const nextStatus: StatusState = { kind: "error", message: result.message ?? t.statusText.mergeError };
+        lastSettledStatusRef.current = nextStatus;
+        setStatusState(nextStatus);
       }
     } catch (error) {
       if (!mountedRef.current || mergeRequestIdRef.current !== requestId) {
@@ -279,7 +287,9 @@ function App({ platform = getPlatform() }: AppProps) {
         failed: [],
         variant: "error"
       });
-        setStatusState({ kind: "error", message });
+      const nextStatus: StatusState = { kind: "error", message };
+      lastSettledStatusRef.current = nextStatus;
+      setStatusState(nextStatus);
     } finally {
       if (!mountedRef.current || mergeRequestIdRef.current !== requestId) {
         return;

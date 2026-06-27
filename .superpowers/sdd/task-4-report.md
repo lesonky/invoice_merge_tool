@@ -160,3 +160,71 @@ Observed result:
 ### Commit
 
 - review-fix implementation commit SHA: `74b61197900740f3abcde960a384088244734b45`
+
+## Overlapping Cancel Fix
+
+### Scope
+
+- added regression coverage for overlapping selection where the latest request cancels after scanning starts
+- changed selection cancellation recovery to restore the last settled non-scanning status instead of a captured transient `scanning` value
+
+### RED
+
+Added failing test:
+
+- start selection 1 and wait for scanning
+- start selection 2
+- resolve selection 2 as `null`
+- resolve selection 1 later
+- assert status returns to the last settled state and stale selection 1 stays ignored
+
+Command:
+
+```bash
+npm test -- --run src/App.test.tsx
+```
+
+Observed result:
+
+- `src/App.test.tsx > App > restores the last settled status when the latest overlapping selection cancels` failed
+- the UI stayed on the transient scanning state instead of restoring `准备在本地合并`
+
+### GREEN
+
+After updating `src/App.tsx` to track the last settled non-scanning `StatusState` in a ref:
+
+Command:
+
+```bash
+npm test -- --run src/App.test.tsx
+```
+
+Observed result:
+
+- `13/13` App tests passed
+
+### Verification
+
+Full tests:
+
+```bash
+npm test -- --run
+```
+
+Observed result:
+
+- `34/34` tests passed across `5` test files
+
+Build:
+
+```bash
+npm run build
+```
+
+Observed result:
+
+- passed
+
+### Commit
+
+- implementation commit SHA: `TO_BE_RECORDED_LOCALLY_AFTER_COMMIT`
