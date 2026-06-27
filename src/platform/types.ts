@@ -14,7 +14,7 @@ export interface AppPlatform {
   kind: "web" | "tauri";
   selectSource(): Promise<SourceSelection | null>;
   readFile(file: InvoiceFile): Promise<Uint8Array>;
-  imageUrl(file: InvoiceFile): string;
+  imageUrl(file: InvoiceFile): string | Promise<string>;
   merge(
     input: MergeInput,
     onProgress: (payload: ProgressPayload) => void
