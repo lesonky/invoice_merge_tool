@@ -2,6 +2,7 @@ node_modules
 pnpm-lock.yaml
 yarn.lock
 # package-lock is committed to pin dependencies
+.superpowers/
 .DS_Store
 /dist
 /.turbo
