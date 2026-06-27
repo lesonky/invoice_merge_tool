@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/tauri";
-import { open as openDialog } from "@tauri-apps/api/dialog";
-import { listen } from "@tauri-apps/api/event";
-import MergeSummaryDialog from "@components/MergeSummaryDialog";
-import FileList from "@components/FileList";
-import type { InvoiceFile, MergeResult, ProgressPayload } from "@shared-types/index";
-import { formatBytes } from "@lib/format";
-import { useFilePreviews } from "@lib/useFilePreviews";
-import type { FilePreview } from "@lib/useFilePreviews";
-import { translations } from "@lib/translations";
-import type { Language } from "@lib/translations";
+import MergeSummaryDialog from "./components/MergeSummaryDialog";
+import FileList from "./components/FileList";
+import type { InvoiceFile, ProgressPayload } from "@shared-types/index";
+import { formatBytes } from "./lib/format";
+import { useFilePreviews } from "./lib/useFilePreviews";
+import type { FilePreview } from "./lib/useFilePreviews";
+import { translations } from "./lib/translations";
+import type { Language } from "./lib/translations";
+import { getPlatform } from "./platform";
+import type { AppPlatform } from "./platform";
 import type { ThemeMode, ThemeAppearance, ViewMode, ThemeStyles } from "@shared-types/ui";
 import {
   ChevronDown,
@@ -52,7 +51,11 @@ const defaultDialog: DialogState = {
   variant: "success"
 };
 
-function App() {
+interface AppProps {
+  platform?: AppPlatform;
+}
+
+function App({ platform = getPlatform() }: AppProps) {
   const [folderPath, setFolderPath] = useState("");
   const [files, setFiles] = useState<InvoiceFile[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig | null>({
@@ -65,8 +68,8 @@ function App() {
   const [dialog, setDialog] = useState<DialogState>(defaultDialog);
   const [selectedMap, setSelectedMap] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [lang, setLang] = useState<Language>("zh");
-  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
+  const [lang, setLang] = useState<Language>(() => (localStorage.getItem("app_lang") as Language) || "zh");
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem("app_theme") as ThemeMode) || "dark");
   const [activeTheme, setActiveTheme] = useState<ThemeAppearance>("dark");
   const [showSettings, setShowSettings] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -74,7 +77,7 @@ function App() {
   const [pageSelections, setPageSelections] = useState<Record<string, number>>({});
 
   const t = translations[lang];
-  const { previews, loading: previewLoading } = useFilePreviews(files);
+  const { previews, loading: previewLoading } = useFilePreviews(files, platform);
   const accentPalette = useMemo(
     () =>
       files.reduce<Record<string, string>>((map, file, index) => {
@@ -87,6 +90,11 @@ function App() {
   const previewMap = useMemo(() => mapPreviews(previews), [previews]);
 
   useEffect(() => {
+    localStorage.setItem("app_lang", lang);
+  }, [lang]);
+
+  useEffect(() => {
+    localStorage.setItem("app_theme", themeMode);
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const applyTheme = () => {
       if (themeMode === "system") {
@@ -105,17 +113,10 @@ function App() {
   }, [themeMode]);
 
   useEffect(() => {
-    const unlistenPromise = listen<ProgressPayload>("merge-progress", (event) => {
-      const { current, total, phase } = event.payload;
-      if (!total) return;
-      setProgress(Math.round((current / total) * 100));
-      setStatusState({ kind: "progress", phase, current, total });
-    });
-
     return () => {
-      unlistenPromise.then((unlisten) => unlisten());
+      platform.dispose();
     };
-  }, []);
+  }, [platform]);
 
   useEffect(() => {
     setSelectedMap((prev) => {
@@ -141,24 +142,24 @@ function App() {
   }, [files, previewMap]);
 
   const selectFolder = useCallback(async () => {
-    const folder = await openDialog({ directory: true, multiple: false });
-    if (!folder || Array.isArray(folder)) {
-      return;
-    }
-
+    const previousStatus = statusState;
     setStatusState({ kind: "scanning" });
     try {
-      const result = await invoke<InvoiceFile[]>("scan_folder_cmd", { folderPath: folder });
-      setFolderPath(folder);
-      const initial = sortList(result, "file_name", "asc");
+      const selection = await platform.selectSource();
+      if (!selection) {
+        setStatusState(previousStatus);
+        return;
+      }
+      setFolderPath(selection.folderLabel);
+      const initial = sortList(selection.files, "file_name", "asc");
       setFiles(initial);
       setSortConfig({ field: "file_name", direction: "asc" });
-      setStatusState({ kind: "found", count: result.length });
+      setStatusState({ kind: "found", count: selection.files.length });
     } catch (error) {
       console.error(error);
       setStatusState({ kind: "error", message: t.statusText.scanError });
     }
-  }, [t.statusText.scanError]);
+  }, [platform, statusState, t.statusText.scanError]);
 
   const selectedFiles = useMemo(
     () => files.filter((file) => selectedMap[file.path] ?? true),
@@ -198,21 +199,26 @@ function App() {
     setStatusState({ kind: "merging" });
 
     try {
-      const result = await invoke<MergeResult>("merge_invoices_cmd", {
-        req: {
-          folder_path: folderPath,
+      const result = await platform.merge(
+        {
           files: selectedFiles,
-          sort_mode: sortConfig ? (sortConfig.field === "modified_ts" ? "ModifiedAsc" : "FileNameAsc") : "Custom",
-          output_file_name: customName.trim() ? customName.trim() : null
+          outputFileName: customName.trim() ? customName.trim() : null
+        },
+        ({ current, total, phase }: ProgressPayload) => {
+          if (!total) return;
+          setProgress(Math.round((current / total) * 100));
+          setStatusState({ kind: "progress", phase, current, total });
         }
-      });
+      );
 
       if (result.success) {
-        const failText = result.failed_files.length ? ` (${result.failed_files.length} failed)` : "";
         setDialog({
           open: true,
           title: t.successTitle,
-          description: `${t.successMsg} ${result.output_path}${failText}`,
+          description:
+            platform.kind === "web"
+              ? `${t.successDownloadMsg} ${result.output_path}`
+              : `${t.successMsg} ${result.output_path}`,
           outputPath: result.output_path,
           failed: result.failed_files,
           variant: "success"
@@ -242,7 +248,16 @@ function App() {
     } finally {
       setIsMerging(false);
     }
-  }, [folderPath, selectedFiles, sortConfig, customName, t.successMsg, t.successTitle, t.statusText.mergeError]);
+  }, [
+    customName,
+    folderPath,
+    platform,
+    selectedFiles,
+    t.statusText.mergeError,
+    t.successDownloadMsg,
+    t.successMsg,
+    t.successTitle
+  ]);
 
   const closeDialog = useCallback(() => setDialog(defaultDialog), []);
 
@@ -311,13 +326,13 @@ function App() {
   const statusMessage = useMemo(() => {
     switch (statusState.kind) {
       case "idle":
-        return t.statusText.ready;
+        return platform.kind === "web" ? t.statusText.readyWeb : t.statusText.ready;
       case "scanning":
         return t.statusText.scanning;
       case "found":
         return t.statusText.found.replace("{count}", String(statusState.count));
       case "merging":
-        return t.statusText.mergeStart;
+        return platform.kind === "web" ? t.statusText.mergeStartWeb : t.statusText.mergeStart;
       case "progress":
         return `${t.statusText.phases[statusState.phase]} (${statusState.current}/${statusState.total})`;
       case "error":
@@ -325,7 +340,7 @@ function App() {
       default:
         return t.statusText.ready;
     }
-  }, [statusState, t.statusText]);
+  }, [platform.kind, statusState, t.statusText]);
 
   const sortOptions = useMemo(
     () => [
@@ -351,6 +366,8 @@ function App() {
       <p className={`text-sm max-w-md ${themeStyles.textMain}`}>{t.emptyStateAction}</p>
       <button
         onClick={selectFolder}
+        aria-label={t.selectFolder}
+        title={t.selectFolder}
         className="px-5 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm font-medium shadow-lg shadow-indigo-500/30"
       >
         {t.selectFolder}
@@ -399,6 +416,8 @@ function App() {
             }`}>
               <button
                 onClick={() => setViewMode("grid")}
+                aria-label={t.previewGrid}
+                title={t.previewGrid}
                 className={`p-1.5 rounded-md transition ${
                   viewMode === "grid" 
                     ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/25" 
@@ -409,6 +428,8 @@ function App() {
               </button>
               <button
                 onClick={() => setViewMode("list")}
+                aria-label={t.previewList}
+                title={t.previewList}
                 className={`p-1.5 rounded-md transition ${
                   viewMode === "list" 
                     ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/25" 
@@ -422,6 +443,8 @@ function App() {
             <div className="relative pointer-events-auto">
               <button
                 onClick={() => setShowSettings((prev) => !prev)}
+                aria-label={t.openSettings}
+                title={t.openSettings}
                 className={`p-2 rounded-full transition-colors ${activeTheme === "dark" ? "hover:bg-white/10 text-slate-300" : "hover:bg-slate-100 text-slate-500"}`}
               >
                 <Settings className={`w-5 h-5 transition-transform ${showSettings ? "text-indigo-500 rotate-45" : ""}`} />
@@ -443,6 +466,7 @@ function App() {
                           <button
                             key={code}
                             onClick={() => setLang(code)}
+                            aria-label={code === "zh" ? "中文" : "English"}
                             className={`flex-1 py-1.5 text-xs font-medium rounded-md transition ${
                               lang === code
                                 ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25"
@@ -468,6 +492,7 @@ function App() {
                           <button
                             key={item.id}
                             onClick={() => setThemeMode(item.id as ThemeMode)}
+                            aria-label={item.label}
                             title={item.label}
                             className={`flex-1 py-1.5 rounded-md flex items-center justify-center ${
                               themeMode === item.id
@@ -491,14 +516,16 @@ function App() {
         <div className="px-6 pb-6 pt-2">
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 space-y-2">
-              <label className="text-xs font-semibold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+              <label htmlFor="source-folder-input" className="text-xs font-semibold text-indigo-400 uppercase tracking-widest flex items-center gap-2">
                 <FolderOpen size={14} /> {t.sourceDir}
               </label>
               <div className="relative group">
                 <input
+                  id="source-folder-input"
                   type="text"
                   value={folderPath}
                   readOnly
+                  aria-label={t.sourceDir}
                   placeholder={t.searchPlaceholder}
                   className={`w-full text-sm rounded-xl px-4 py-3 pl-10 border focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${themeStyles.inputBg}`}
                 />
@@ -507,6 +534,8 @@ function App() {
                 />
                 <button
                   onClick={selectFolder}
+                  aria-label={t.selectFolder}
+                  title={t.selectFolder}
                   className="absolute right-2 top-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs shadow-lg shadow-indigo-500/30"
                 >
                   {t.selectFolder}
@@ -515,14 +544,16 @@ function App() {
             </div>
 
             <div className="flex-1 space-y-2">
-              <label className="text-xs font-semibold text-violet-400 uppercase tracking-widest flex items-center gap-2">
+              <label htmlFor="output-file-name-input" className="text-xs font-semibold text-violet-400 uppercase tracking-widest flex items-center gap-2">
                 <FileText size={14} /> {t.outputName}
               </label>
               <div className="relative">
                 <input
+                  id="output-file-name-input"
                   type="text"
                   value={customName}
                   onChange={(event) => setCustomName(event.target.value)}
+                  aria-label={t.outputName}
                   placeholder="Merged_Invoices"
                   className={`w-full text-sm rounded-xl px-4 py-3 border focus:outline-none focus:ring-2 focus:ring-violet-500/40 ${themeStyles.inputBg}`}
                 />
@@ -569,6 +600,8 @@ function App() {
               <div className="relative">
                 <button
                   onClick={() => setShowSortMenu((prev) => !prev)}
+                  aria-label={t.sortTitle}
+                  title={t.sortTitle}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition ${themeStyles.toolbarBtn}`}
                 >
                   <Filter size={14} />
@@ -665,6 +698,8 @@ function App() {
           <button
             onClick={handleMerge}
             disabled={!selectedCount || !folderPath || isMerging}
+            aria-label={t.mergeExportLabel}
+            title={t.mergeExport}
             className={`relative overflow-hidden group whitespace-nowrap px-6 py-3 rounded-xl font-bold text-white shadow-lg transition ${
               !selectedCount || !folderPath || isMerging
                 ? "bg-slate-500/40 cursor-not-allowed"
@@ -693,7 +728,7 @@ function App() {
         open={dialog.open}
         title={dialog.title}
         description={
-          dialog.failed.length ? `${dialog.description}\nFailed: ${dialog.failed.join(", ")}` : dialog.description
+          dialog.failed.length ? `${dialog.description}\n${t.failedFilesLabel} ${dialog.failed.join(", ")}` : dialog.description
         }
         primaryLabel={t.close}
         onPrimary={closeDialog}
