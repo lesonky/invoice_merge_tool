@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint --ext .ts,.tsx src",
     "format": "prettier --write .",
-    "check": "npm run lint && npm run test",
+    "check": "npm run lint && npm run test -- --run",
     "test": "vitest",
     "tauri": "tauri"
   },
