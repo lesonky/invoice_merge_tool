@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { InvoiceFile } from "@shared-types/index";
 import { getPlatform } from "../platform";
@@ -132,7 +133,7 @@ const renderPdfPages = async (
     return [];
   }
 
-  let pdf: { numPages: number; getPage: (pageNumber: number) => Promise<any>; destroy: () => Promise<void> } | null = null;
+  let pdf: PDFDocumentProxy | null = null;
 
   try {
     pdf = await task.promise;

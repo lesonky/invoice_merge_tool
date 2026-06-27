@@ -291,11 +291,10 @@ function App({ platform = getPlatform() }: AppProps) {
       lastSettledStatusRef.current = nextStatus;
       setStatusState(nextStatus);
     } finally {
-      if (!mountedRef.current || mergeRequestIdRef.current !== requestId) {
-        return;
+      if (mountedRef.current && mergeRequestIdRef.current === requestId) {
+        isMergingRef.current = false;
+        setIsMerging(false);
       }
-      isMergingRef.current = false;
-      setIsMerging(false);
     }
   }, [
     customName,

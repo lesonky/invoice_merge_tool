@@ -18,7 +18,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Check, FileText, GripVertical, Image as ImageIcon } from "lucide-react";
+import { Check, FileText, Image as ImageIcon } from "lucide-react";
 import { formatBytes, formatDate } from "@lib/format";
 import type { InvoiceFile } from "@shared-types/index";
 import type { FilePreview, PreviewPage } from "@lib/useFilePreviews";
@@ -209,13 +209,11 @@ function SortableGridCard({
   fileType,
   accent,
   previewPage,
-  placeholderText,
   pageCount,
   pageIndex,
   themeStyles,
   onToggle,
   onChangePage,
-  formatPageIndicator,
 }: ItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: file.path,
@@ -334,7 +332,7 @@ function SortableListItem({
   onChangePage,
   formatPageIndicator,
 }: ItemProps) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: file.path,
   });
   const style: CSSProperties = {
@@ -430,11 +428,9 @@ const DragPreviewCard = ({
   fileType,
   accent,
   previewPage,
-  placeholderText,
   pageCount,
   pageIndex,
   themeStyles,
-  formatPageIndicator,
 }: DragPreviewProps) => (
   <div className={`rounded-2xl border p-3 w-[280px] h-[320px] flex flex-col ${themeStyles.cardSelected} shadow-2xl`}>
     {/* Top Row: Checkbox & Badge */}
