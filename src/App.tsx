@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MergeSummaryDialog from "./components/MergeSummaryDialog";
 import FileList from "./components/FileList";
 import type { InvoiceFile, ProgressPayload } from "@shared-types/index";
@@ -68,13 +68,17 @@ function App({ platform = getPlatform() }: AppProps) {
   const [dialog, setDialog] = useState<DialogState>(defaultDialog);
   const [selectedMap, setSelectedMap] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [lang, setLang] = useState<Language>(() => (localStorage.getItem("app_lang") as Language) || "zh");
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem("app_theme") as ThemeMode) || "dark");
+  const [lang, setLang] = useState<Language>(() => getStoredLanguage(localStorage.getItem("app_lang")));
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => getStoredThemeMode(localStorage.getItem("app_theme")));
   const [activeTheme, setActiveTheme] = useState<ThemeAppearance>("dark");
   const [showSettings, setShowSettings] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [statusState, setStatusState] = useState<StatusState>({ kind: "idle" });
   const [pageSelections, setPageSelections] = useState<Record<string, number>>({});
+  const mountedRef = useRef(false);
+  const isMergingRef = useRef(false);
+  const selectRequestIdRef = useRef(0);
+  const mergeRequestIdRef = useRef(0);
 
   const t = translations[lang];
   const { previews, loading: previewLoading } = useFilePreviews(files, platform);
@@ -92,6 +96,13 @@ function App({ platform = getPlatform() }: AppProps) {
   useEffect(() => {
     localStorage.setItem("app_lang", lang);
   }, [lang]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("app_theme", themeMode);
@@ -142,10 +153,20 @@ function App({ platform = getPlatform() }: AppProps) {
   }, [files, previewMap]);
 
   const selectFolder = useCallback(async () => {
+    if (isMergingRef.current) {
+      return;
+    }
+
+    const requestId = selectRequestIdRef.current + 1;
+    selectRequestIdRef.current = requestId;
     const previousStatus = statusState;
     setStatusState({ kind: "scanning" });
+
     try {
       const selection = await platform.selectSource();
+      if (!mountedRef.current || selectRequestIdRef.current !== requestId || isMergingRef.current) {
+        return;
+      }
       if (!selection) {
         setStatusState(previousStatus);
         return;
@@ -156,6 +177,9 @@ function App({ platform = getPlatform() }: AppProps) {
       setSortConfig({ field: "file_name", direction: "asc" });
       setStatusState({ kind: "found", count: selection.files.length });
     } catch (error) {
+      if (!mountedRef.current || selectRequestIdRef.current !== requestId) {
+        return;
+      }
       console.error(error);
       setStatusState({ kind: "error", message: t.statusText.scanError });
     }
@@ -191,8 +215,12 @@ function App({ platform = getPlatform() }: AppProps) {
   );
 
   const handleMerge = useCallback(async () => {
-    if (!folderPath || !selectedFiles.length) return;
+    if (!folderPath || !selectedFiles.length || isMergingRef.current) return;
 
+    const requestId = mergeRequestIdRef.current + 1;
+    mergeRequestIdRef.current = requestId;
+    selectRequestIdRef.current += 1;
+    isMergingRef.current = true;
     setIsMerging(true);
     setProgress(0);
     setDialog(defaultDialog);
@@ -205,11 +233,15 @@ function App({ platform = getPlatform() }: AppProps) {
           outputFileName: customName.trim() ? customName.trim() : null
         },
         ({ current, total, phase }: ProgressPayload) => {
-          if (!total) return;
+          if (!mountedRef.current || mergeRequestIdRef.current !== requestId || !total) return;
           setProgress(Math.round((current / total) * 100));
           setStatusState({ kind: "progress", phase, current, total });
         }
       );
+
+      if (!mountedRef.current || mergeRequestIdRef.current !== requestId) {
+        return;
+      }
 
       if (result.success) {
         setDialog({
@@ -235,6 +267,9 @@ function App({ platform = getPlatform() }: AppProps) {
         setStatusState({ kind: "error", message: result.message ?? t.statusText.mergeError });
       }
     } catch (error) {
+      if (!mountedRef.current || mergeRequestIdRef.current !== requestId) {
+        return;
+      }
       console.error(error);
       const message = error instanceof Error ? error.message : String(error);
       setDialog({
@@ -244,8 +279,12 @@ function App({ platform = getPlatform() }: AppProps) {
         failed: [],
         variant: "error"
       });
-      setStatusState({ kind: "error", message });
+        setStatusState({ kind: "error", message });
     } finally {
+      if (!mountedRef.current || mergeRequestIdRef.current !== requestId) {
+        return;
+      }
+      isMergingRef.current = false;
       setIsMerging(false);
     }
   }, [
@@ -366,9 +405,12 @@ function App({ platform = getPlatform() }: AppProps) {
       <p className={`text-sm max-w-md ${themeStyles.textMain}`}>{t.emptyStateAction}</p>
       <button
         onClick={selectFolder}
+        disabled={isMerging}
         aria-label={t.selectFolder}
         title={t.selectFolder}
-        className="px-5 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm font-medium shadow-lg shadow-indigo-500/30"
+        className={`px-5 py-2 rounded-full text-white text-sm font-medium shadow-lg shadow-indigo-500/30 ${
+          isMerging ? "bg-slate-500/40 cursor-not-allowed" : "bg-gradient-to-r from-indigo-500 to-violet-600"
+        }`}
       >
         {t.selectFolder}
       </button>
@@ -534,9 +576,12 @@ function App({ platform = getPlatform() }: AppProps) {
                 />
                 <button
                   onClick={selectFolder}
+                  disabled={isMerging}
                   aria-label={t.selectFolder}
                   title={t.selectFolder}
-                  className="absolute right-2 top-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs shadow-lg shadow-indigo-500/30"
+                  className={`absolute right-2 top-2 px-3 py-1.5 rounded-lg text-white text-xs shadow-lg shadow-indigo-500/30 ${
+                    isMerging ? "bg-slate-500/40 cursor-not-allowed" : "bg-indigo-600"
+                  }`}
                 >
                   {t.selectFolder}
                 </button>
@@ -760,6 +805,15 @@ export default App;
 type SortField = "file_name" | "ext" | "modified_ts" | "size";
 type SortDirection = "asc" | "desc";
 type SortConfig = { field: SortField; direction: SortDirection };
+const DEFAULT_LANGUAGE: Language = "zh";
+const DEFAULT_THEME_MODE: ThemeMode = "dark";
+
+const isLanguage = (value: string | null): value is Language => value === "zh" || value === "en";
+const isThemeMode = (value: string | null): value is ThemeMode =>
+  value === "light" || value === "dark" || value === "system";
+
+const getStoredLanguage = (value: string | null): Language => (isLanguage(value) ? value : DEFAULT_LANGUAGE);
+const getStoredThemeMode = (value: string | null): ThemeMode => (isThemeMode(value) ? value : DEFAULT_THEME_MODE);
 
 const sortList = (list: InvoiceFile[], field: SortField, direction: SortDirection) => {
   const factor = direction === "asc" ? 1 : -1;

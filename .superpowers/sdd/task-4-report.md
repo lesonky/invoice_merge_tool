@@ -90,3 +90,73 @@ Checked the final diff against the brief:
 ## Notes
 
 - `npm run build` emits existing bundle-size and browserslist freshness warnings from the repo/toolchain; the build still succeeds
+
+## Review Fix Cycle
+
+### Scope
+
+- validated persisted settings so only `zh|en` and `light|dark|system` are accepted
+- normalized invalid persisted values back to safe defaults
+- guarded async `selectSource()` and `merge()` updates against stale results and unmount
+- locked all choose-folder controls during active merge
+- added review regression coverage in `src/App.test.tsx`
+
+### RED
+
+Added failing tests for:
+
+- invalid `localStorage` settings fallback/normalization
+- overlapping `selectSource()` requests where the latest selection wins
+- choose-folder controls disabled during merge
+- pending select/merge work ignored after unmount
+
+Command:
+
+```bash
+npm test -- --run src/App.test.tsx
+```
+
+Observed result:
+
+- failed with invalid persisted setting crash: `Cannot read properties of undefined (reading 'statusText')`
+- failed overlapping selection and merge lifecycle expectations before the App fixes
+
+### GREEN
+
+After updating `src/App.tsx`:
+
+Command:
+
+```bash
+npm test -- --run src/App.test.tsx
+```
+
+Observed result:
+
+- `12/12` App tests passed
+
+### Verification
+
+Full tests:
+
+```bash
+npm test -- --run
+```
+
+Observed result:
+
+- `33/33` tests passed across `5` test files
+
+Build:
+
+```bash
+npm run build
+```
+
+Observed result:
+
+- passed
+
+### Commit
+
+- review-fix commit SHA: `07c48b37d1e5b6f0a964ceed84793997f9e5bf88`

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { InvoiceFile, MergeResult } from "@shared-types/index";
 import type { AppPlatform } from "./platform";
@@ -92,6 +92,21 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  test("falls back to zh and dark when persisted settings are invalid", async () => {
+    localStorage.setItem("app_lang", "fr");
+    localStorage.setItem("app_theme", "sepia");
+
+    const App = await loadApp();
+    const platform = fakePlatform();
+    const { container } = render(<App platform={platform} />);
+
+    expect(screen.getByLabelText("输出文件名")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "选择文件夹" }).length).toBeGreaterThan(0);
+    expect(localStorage.getItem("app_lang")).toBe("zh");
+    expect(localStorage.getItem("app_theme")).toBe("dark");
+    expect((container.firstChild as HTMLElement | null)?.className ?? "").toContain("bg-[#0B0E14]");
+  });
+
   test("loads browser-selected files and enables merge", async () => {
     const App = await loadApp();
     const platform = fakePlatform({
@@ -166,6 +181,48 @@ describe("App", () => {
     expect(screen.getByText("one.png")).toBeTruthy();
   });
 
+  test("keeps the latest overlapping source selection", async () => {
+    const firstSelection = deferred<{ folderLabel: string; files: InvoiceFile[] } | null>();
+    const secondSelection = deferred<{ folderLabel: string; files: InvoiceFile[] } | null>();
+    const App = await loadApp();
+    const platform = fakePlatform({
+      selectSource: vi
+        .fn()
+        .mockImplementationOnce(() => firstSelection.promise)
+        .mockImplementationOnce(() => secondSelection.promise)
+    });
+
+    render(<App platform={platform} />);
+
+    const [headerChooseButton] = screen.getAllByRole("button", { name: "选择文件夹" });
+    fireEvent.click(headerChooseButton);
+    fireEvent.click(headerChooseButton);
+
+    await act(async () => {
+      secondSelection.resolve({
+        folderLabel: "Latest",
+        files: [meta("latest.png", "web:latest.png")]
+      });
+    });
+
+    expect(await screen.findByDisplayValue("Latest")).toBeTruthy();
+    expect(screen.getByText("latest.png")).toBeTruthy();
+
+    await act(async () => {
+      firstSelection.resolve({
+        folderLabel: "Stale",
+        files: [meta("stale.png", "web:stale.png")]
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Latest")).toBeTruthy();
+      expect(screen.getByText("latest.png")).toBeTruthy();
+      expect(screen.queryByDisplayValue("Stale")).toBeNull();
+      expect(screen.queryByText("stale.png")).toBeNull();
+    });
+  });
+
   test("shows progress updates during merge", async () => {
     const mergeCompletion = deferred<MergeResult>();
     const App = await loadApp();
@@ -195,6 +252,46 @@ describe("App", () => {
       mergeCompletion.resolve({
         success: true,
         output_path: "June.pdf",
+        failed_files: [],
+        message: null
+      });
+    });
+  });
+
+  test("disables all choose-folder controls during merge", async () => {
+    const mergeCompletion = deferred<MergeResult>();
+    const App = await loadApp();
+    const selectSource = vi.fn(async () => ({
+      folderLabel: "Invoices",
+      files: [meta("one.png", "web:one.png")]
+    }));
+    const platform = fakePlatform({
+      selectSource,
+      merge: vi.fn(async () => mergeCompletion.promise)
+    });
+
+    render(<App platform={platform} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "选择文件夹" })[0]);
+    });
+    await screen.findByDisplayValue("Invoices");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "合并并导出" }));
+    });
+
+    const chooseButtons = screen.getAllByRole("button", { name: "选择文件夹" }) as HTMLButtonElement[];
+    expect(chooseButtons.length).toBeGreaterThan(0);
+    chooseButtons.forEach((button) => expect(button.disabled).toBe(true));
+
+    fireEvent.click(chooseButtons[0]);
+    expect(selectSource).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      mergeCompletion.resolve({
+        success: true,
+        output_path: "done.pdf",
         failed_files: [],
         message: null
       });
@@ -271,6 +368,78 @@ describe("App", () => {
 
     expect(screen.getByLabelText("Output Filename")).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Choose Folder" }).length).toBeGreaterThan(0);
+  });
+
+  test("ignores a pending source selection after unmount", async () => {
+    const pendingSelection = deferred<{ folderLabel: string; files: InvoiceFile[] } | null>();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const App = await loadApp();
+    const platform = fakePlatform({
+      selectSource: vi.fn(() => pendingSelection.promise)
+    });
+
+    const { unmount } = render(<App platform={platform} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "选择文件夹" })[0]);
+    });
+
+    unmount();
+
+    await act(async () => {
+      pendingSelection.resolve({
+        folderLabel: "Late",
+        files: [meta("late.png", "web:late.png")]
+      });
+      await Promise.resolve();
+    });
+
+    expect(platform.dispose).toHaveBeenCalledTimes(1);
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  test("ignores late merge updates after unmount", async () => {
+    const mergeCompletion = deferred<MergeResult>();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let emitProgress: ((payload: { current: number; total: number; phase: "scan" | "convert" | "merge" | "write" }) => void) | null = null;
+    const App = await loadApp();
+    const platform = fakePlatform({
+      selectSource: vi.fn(async () => ({
+        folderLabel: "Invoices",
+        files: [meta("one.png", "web:one.png")]
+      })),
+      merge: vi.fn(async (_input, onProgress) => {
+        emitProgress = onProgress;
+        return mergeCompletion.promise;
+      })
+    });
+
+    const { unmount } = render(<App platform={platform} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: "选择文件夹" })[0]);
+    });
+    await screen.findByDisplayValue("Invoices");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "合并并导出" }));
+    });
+
+    unmount();
+
+    await act(async () => {
+      emitProgress?.({ current: 1, total: 2, phase: "merge" });
+      mergeCompletion.resolve({
+        success: true,
+        output_path: "late.pdf",
+        failed_files: [],
+        message: null
+      });
+      await Promise.resolve();
+    });
+
+    expect(platform.dispose).toHaveBeenCalledTimes(1);
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   test("disposes the platform on unmount", async () => {
