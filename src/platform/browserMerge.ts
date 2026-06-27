@@ -27,6 +27,20 @@ export interface BrowserMergeResult {
   outputFileName: string;
 }
 
+interface PreparedPdfInput {
+  kind: "pdf";
+  fileName: string;
+  document: Awaited<ReturnType<typeof loadPdfLib>>["PDFDocument"]["prototype"];
+}
+
+interface PreparedImageInput {
+  kind: "image";
+  fileName: string;
+  converted: ConvertedImage;
+}
+
+type PreparedInput = PreparedPdfInput | PreparedImageInput;
+
 export type BrowserImageConverter = (
   bytes: Uint8Array,
   file: InvoiceFile
@@ -170,11 +184,15 @@ async function decodeImage(bytes: Uint8Array, file: InvoiceFile): Promise<Conver
   const blob = new Blob([blobBytes], { type: mimeTypeFor(file) });
 
   if (typeof createImageBitmap === "function") {
-    const bitmap = await createImageBitmap(blob);
     try {
-      return await renderImageToJpeg(bitmap, bitmap.width, bitmap.height);
-    } finally {
-      bitmap.close?.();
+      const bitmap = await createImageBitmap(blob);
+      try {
+        return await renderImageToJpeg(bitmap, bitmap.width, bitmap.height);
+      } finally {
+        bitmap.close?.();
+      }
+    } catch {
+      // Fall through to the HTMLImageElement path when bitmap decoding rejects.
     }
   }
 
@@ -246,6 +264,7 @@ export async function mergeBrowserFiles(
   const total = input.files.length;
   const output = await PDFDocument.create();
   const failedFiles: string[] = [];
+  const preparedInputs: PreparedInput[] = [];
 
   for (const [index, file] of input.files.entries()) {
     onProgress({ current: index, total, phase: "scan" });
@@ -253,17 +272,12 @@ export async function mergeBrowserFiles(
       const bytes = await readFile(file);
 
       if (isPdf(file)) {
-        const source = await PDFDocument.load(bytes);
+        preparedInputs.push({
+          kind: "pdf",
+          fileName: file.file_name,
+          document: await PDFDocument.load(bytes)
+        });
         onProgress({ current: index + 1, total, phase: "convert" });
-
-        const pages = await output.copyPages(source, source.getPageIndices());
-        if (pages.length === 0) {
-          throw new Error("No pages in PDF");
-        }
-        for (const page of pages) {
-          output.addPage(page);
-        }
-        onProgress({ current: index + 1, total, phase: "merge" });
         continue;
       }
 
@@ -271,19 +285,45 @@ export async function mergeBrowserFiles(
         throw new Error("Unsupported file type");
       }
 
-      const converted = await convertImage(bytes, file);
+      preparedInputs.push({
+        kind: "image",
+        fileName: file.file_name,
+        converted: await convertImage(bytes, file)
+      });
       onProgress({ current: index + 1, total, phase: "convert" });
-
-      const embedded = await embedConvertedImage(output, converted);
-      const page = output.addPage([A4_WIDTH, A4_HEIGHT]);
-      const placement = fitWithinPage(converted.width, converted.height);
-      page.drawImage(embedded, placement);
-      onProgress({ current: index + 1, total, phase: "merge" });
     } catch {
       failedFiles.push(file.file_name);
-      onProgress({ current: index + 1, total, phase: "convert" });
     }
   }
+
+  if (preparedInputs.length === 0) {
+    throw new Error("No pages could be produced");
+  }
+
+  const mergeTotal = preparedInputs.length;
+  let merged = 0;
+
+  for (const prepared of preparedInputs) {
+    onProgress({ current: merged, total: mergeTotal, phase: "merge" });
+    try {
+      if (prepared.kind === "pdf") {
+        const pages = await output.copyPages(prepared.document, prepared.document.getPageIndices());
+        for (const page of pages) {
+          output.addPage(page);
+        }
+      } else {
+        const embedded = await embedConvertedImage(output, prepared.converted);
+        const page = output.addPage([A4_WIDTH, A4_HEIGHT]);
+        const placement = fitWithinPage(prepared.converted.width, prepared.converted.height);
+        page.drawImage(embedded, placement);
+      }
+    } catch {
+      failedFiles.push(prepared.fileName);
+    }
+    merged += 1;
+  }
+
+  onProgress({ current: mergeTotal, total: mergeTotal, phase: "merge" });
 
   if (output.getPageCount() === 0) {
     throw new Error("No pages could be produced");
