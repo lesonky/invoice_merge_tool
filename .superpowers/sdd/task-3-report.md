@@ -54,3 +54,52 @@ Result:
 - Confirmed Tauri merge sends `sort_mode: "Custom"` and preserves existing command/event names.
 - Confirmed preview loading now uses `platform.readFile()` / `platform.imageUrl()` and tears down pending PDF loading tasks on cleanup.
 - Left the existing unrelated modification in `src/App.tsx` untouched.
+
+## Follow-up Fix: Browser Picker Cancellation
+
+Issue from review:
+
+- `BrowserPlatform.selectSource()` did not settle when the native picker emitted the HTML input `cancel` event, leaving the transient input in the DOM and making reuse unsafe.
+
+Fix:
+
+- Added a shared idempotent `settle()` path for both `change` and `cancel`.
+- `settle()` now removes both listeners, removes the transient input, and resolves exactly once.
+- Added regression coverage for:
+  - `cancel` resolving `null`
+  - transient input removal after `cancel`
+  - a second `selectSource()` call succeeding after a prior `cancel`
+  - `change` with an empty `FileList` resolving `null`
+
+RED evidence:
+
+```bash
+npm test -- --run src/platform/index.test.ts src/lib/useFilePreviews.test.ts
+```
+
+Output:
+
+- `src/platform/index.test.ts > browser picker resolves null on cancel, removes the transient input, and remains reusable`
+- failed by timing out after `5000ms`, showing the first `selectSource()` never resolved on `cancel`
+
+GREEN evidence:
+
+```bash
+npm test -- --run src/platform/index.test.ts src/lib/useFilePreviews.test.ts
+```
+
+Output:
+
+- `2` test files passed
+- `10` tests passed
+
+Build evidence:
+
+```bash
+npm run build
+```
+
+Output:
+
+- `tsc -b && vite build` completed successfully
+- existing Vite warnings remain about static Tauri imports in `src/App.tsx`, which is outside this follow-up fix

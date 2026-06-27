@@ -110,6 +110,75 @@ describe("runtime adapters", () => {
     });
   });
 
+  test("browser picker resolves null on cancel, removes the transient input, and remains reusable", async () => {
+    const createdInputs: HTMLInputElement[] = [];
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+      const element = createElement(tagName, options);
+      if (tagName === "input") {
+        createdInputs.push(element as HTMLInputElement);
+      }
+      return element;
+    }) as typeof document.createElement);
+
+    let clickCount = 0;
+    vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function click(this: HTMLInputElement) {
+      clickCount += 1;
+      if (clickCount === 1) {
+        this.dispatchEvent(new Event("cancel"));
+        return;
+      }
+
+      const pdf = new File(["pdf"], "invoice.pdf", { lastModified: 2_000 });
+      Object.defineProperty(pdf, "webkitRelativePath", { configurable: true, value: "Invoices/invoice.pdf" });
+      Object.defineProperty(this, "files", { configurable: true, value: [pdf] });
+      this.dispatchEvent(new Event("change"));
+    });
+
+    const platform = createBrowserPlatform();
+    const cancelled = await platform.selectSource();
+
+    expect(cancelled).toBeNull();
+    expect(createdInputs).toHaveLength(1);
+    expect(document.body.contains(createdInputs[0])).toBe(false);
+
+    const selection = await platform.selectSource();
+
+    expect(createdInputs).toHaveLength(2);
+    expect(document.body.contains(createdInputs[1])).toBe(false);
+    expect(selection).toMatchObject({
+      folderLabel: "Invoices",
+      files: [expect.objectContaining({ file_name: "invoice.pdf" })]
+    });
+  });
+
+  test("browser picker resolves null when change yields an empty file list", async () => {
+    let createdInput: HTMLInputElement | null = null;
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+      const element = createElement(tagName, options);
+      if (tagName === "input") {
+        createdInput = element as HTMLInputElement;
+      }
+      return element;
+    }) as typeof document.createElement);
+
+    vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function click(this: HTMLInputElement) {
+      Object.defineProperty(this, "files", { configurable: true, value: [] });
+      this.dispatchEvent(new Event("change"));
+    });
+
+    const platform = createBrowserPlatform();
+    const selection = await platform.selectSource();
+
+    expect(selection).toBeNull();
+    expect(createdInput).not.toBeNull();
+    if (!createdInput) {
+      throw new Error("Expected file input to be created");
+    }
+    expect(document.body.contains(createdInput)).toBe(false);
+  });
+
   test("browser merge downloads a local blob and revokes the temporary URL", async () => {
     const pdfBytes = await makePdf();
     const createObjectURL = vi.fn(() => "blob:merged");

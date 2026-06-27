@@ -44,22 +44,38 @@ export function createBrowserPlatform(deps: BrowserPlatformDeps = {}): AppPlatfo
       input.accept = BROWSER_ACCEPT;
       setWebkitDirectory(input);
 
+      let settled = false;
+
       const cleanup = () => {
         input.removeEventListener("change", handleChange);
+        input.removeEventListener("cancel", handleCancel);
         input.remove();
+      };
+
+      const settle = (value: SourceSelection | null) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve(value);
       };
 
       const handleChange = () => {
         const fileList = input.files ? Array.from(input.files) : [];
-        cleanup();
         if (!fileList.length) {
-          resolve(null);
+          settle(null);
           return;
         }
-        resolve(registry.replace(fileList));
+        settle(registry.replace(fileList));
       };
 
-      input.addEventListener("change", handleChange, { once: true });
+      const handleCancel = () => {
+        settle(null);
+      };
+
+      input.addEventListener("change", handleChange);
+      input.addEventListener("cancel", handleCancel);
       doc.body.appendChild(input);
       input.click();
     });
