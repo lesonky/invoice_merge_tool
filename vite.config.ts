@@ -13,6 +13,7 @@ export default defineConfig(() => {
   const minify: "esbuild" | "terser" | false = process.env.TAURI_DEBUG ? false : "esbuild";
 
   return {
+    base: process.env.VITE_BASE_PATH || "/",
     plugins: pluginList,
     clearScreen: false,
     resolve: {
